@@ -1,0 +1,228 @@
+import fs from 'fs';
+import path from 'path';
+import { runCommand } from '../utils/command.js';
+import { REPO_PATH, WORKTREE_BASE_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
+
+export function mapBranchToDir(branch) {
+  // Keep alnum, dash, dot and underscore; replace others (including '/') with '_'
+  return branch.replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+export function exists(p) {
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+}
+
+export async function readIssueDescription(worktreePath) {
+  const issuesDir = path.join(worktreePath, 'issues');
+  if (!exists(issuesDir)) return null;
+
+  try {
+    const files = fs.readdirSync(issuesDir);
+    const mdFiles = files.filter(f => f.endsWith('.md'));
+    if (mdFiles.length === 0) return null;
+
+    // Extract ticket ID from worktree path (e.g., "A-228" from "A-228-communicate-new-features...")
+    const folderName = path.basename(worktreePath);
+    const ticketIdMatch = folderName.match(/^([A-Z]+-\d+)/);
+    const ticketId = ticketIdMatch ? ticketIdMatch[1] : null;
+
+    // Try to find the matching issue file, fall back to first .md file
+    let mdFile;
+    if (ticketId) {
+      mdFile = mdFiles.find(f => f.startsWith(ticketId)) || mdFiles[0];
+    } else {
+      mdFile = mdFiles[0];
+    }
+
+    const fullPath = path.join(issuesDir, mdFile);
+    console.log(`📖 Reading issue from: ${fullPath} (folder: ${folderName}, ticketId: ${ticketId})`);
+
+    const content = fs.readFileSync(fullPath, 'utf8');
+    const lines = content.split('\n');
+
+    // Extract title (first line after #)
+    const titleLine = lines.find(line => line.startsWith('# '));
+    const title = titleLine ? titleLine.replace('# ', '').trim() : null;
+
+    // Extract description section
+    const descIndex = lines.findIndex(line => line.trim() === '## Description');
+    if (descIndex === -1) return { title };
+
+    let description = '';
+    for (let i = descIndex + 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith('## ') || line.startsWith('---')) break;
+      if (line) description += line + ' ';
+    }
+
+    const result = { title, description: description.trim() };
+    console.log(`📖 Extracted: title="${title?.substring(0, 50)}...", desc="${result.description.substring(0, 50)}..."`);
+    return result;
+  } catch (e) {
+    console.error(`❌ Error reading issue from ${worktreePath}:`, e.message);
+    return null;
+  }
+}
+
+export async function listWorktrees(cwd) {
+  const result = await runCommand('git', ['worktree', 'list', '--porcelain'], { cwd });
+
+  if (result.code !== 0) {
+    return [];
+  }
+
+  const worktrees = [];
+  const lines = result.stdout.split('\n');
+  let current = {};
+
+  for (const line of lines) {
+    if (line.startsWith('worktree ')) {
+      if (current.path) worktrees.push(current);
+      current = { path: line.slice('worktree '.length).trim() };
+    } else if (line.startsWith('branch ')) {
+      current.branch = line.slice('branch '.length).trim();
+    }
+  }
+
+  if (current.path) worktrees.push(current);
+  return worktrees;
+}
+
+export async function getBranchNameFromPath(worktreePath) {
+  try {
+    const result = await runCommand('git', ['branch', '--show-current'], { cwd: worktreePath });
+
+    if (result.code === 0 && result.stdout.trim()) {
+      return result.stdout.trim();
+    }
+  } catch (err) {
+    console.error(`Error getting branch name from ${worktreePath}:`, err.message);
+  }
+
+  return null;
+}
+
+export function resolveWorktreeBaseDir() {
+  let srcDir = WORKTREE_BASE_PATH;
+  if (!srcDir) {
+    const projectFolder = process.env.PROJECT_FOLDER_NAME || 'project';
+    const looksLikeProjectSrc = path.basename(REPO_PATH) === projectFolder && path.basename(path.dirname(REPO_PATH)) === 'src';
+    srcDir = looksLikeProjectSrc ? REPO_PATH : path.join(REPO_PATH, 'src', projectFolder);
+  }
+  return srcDir;
+}
+
+export async function createWorktree(branch) {
+  const results = [];
+  const srcDir = resolveWorktreeBaseDir();
+
+  // Ensure base directory exists
+  if (!exists(srcDir)) {
+    try {
+      fs.mkdirSync(srcDir, { recursive: true });
+    } catch (e) {
+      throw new Error(`Failed to create worktree base at ${srcDir}: ${e.message}`);
+    }
+  }
+
+  const dirName = mapBranchToDir(branch);
+  const worktreePath = path.join(srcDir, dirName);
+
+  // Check if worktree already exists
+  const existingWorktrees = await listWorktrees(WORKTREE_REPO_PATH);
+  const existing = existingWorktrees.find(wt => path.resolve(wt.path) === path.resolve(worktreePath));
+
+  if (existing) {
+    return { ok: true, branch, worktreePath, existed: true, results };
+  }
+
+  // Ensure parent dir exists
+  try {
+    fs.mkdirSync(worktreePath, { recursive: true });
+  } catch {}
+
+  // Fetch remote and add worktree tracking remote branch
+  results.push({
+    step: 'fetch',
+    ...(await runCommand('git', ['fetch', '--all', '--prune'], { cwd: WORKTREE_REPO_PATH }))
+  });
+
+  const verify = await runCommand('git', ['rev-parse', '--verify', `origin/${branch}`], { cwd: WORKTREE_REPO_PATH });
+  results.push({ step: 'verify-origin-branch', ...verify });
+
+  let baseBranch = `origin/${branch}`;
+
+  if (verify.code !== 0) {
+    // Branch doesn't exist on remote, create from main
+    console.log(`ℹ️  Branch ${branch} doesn't exist on remote, will create from main`);
+    baseBranch = 'main';
+  } else {
+    // Fetch the specific branch to ensure we have the absolute latest state
+    const fetchBranch = await runCommand('git', ['fetch', 'origin', branch], { cwd: WORKTREE_REPO_PATH });
+    results.push({ step: 'fetch-branch-latest', ...fetchBranch });
+  }
+
+  const add = await runCommand(
+    'git',
+    ['worktree', 'add', '-B', branch, worktreePath, baseBranch],
+    { cwd: WORKTREE_REPO_PATH }
+  );
+  results.push({ step: 'worktree-add', ...add });
+
+  const ok = add.code === 0;
+
+  // Copy .env file and .claude directory to the new worktree if successful
+  if (ok) {
+    await copyWorktreeFiles(worktreePath, results);
+  }
+
+  return {
+    ok,
+    branch,
+    worktreePath,
+    results,
+    error: ok ? undefined : add.stderr || add.stdout || 'failed to add worktree'
+  };
+}
+
+async function copyWorktreeFiles(worktreePath, results) {
+  // Copy .env file
+  const sourceEnvPath = path.join(WORKTREE_REPO_PATH, '.env');
+  const targetEnvPath = path.join(worktreePath, '.env');
+
+  if (exists(sourceEnvPath)) {
+    try {
+      fs.copyFileSync(sourceEnvPath, targetEnvPath);
+      console.log(`✅ Copied .env to worktree: ${targetEnvPath}`);
+      results.push({ step: 'copy-env', code: 0, message: 'Copied .env file' });
+    } catch (err) {
+      console.error(`⚠️  Failed to copy .env: ${err.message}`);
+      results.push({ step: 'copy-env', code: 1, error: err.message });
+    }
+  } else {
+    console.log(`ℹ️  No .env file found at ${sourceEnvPath}`);
+    results.push({ step: 'copy-env', code: 0, message: 'No .env file to copy' });
+  }
+
+  // Copy .claude directory (Claude Code subagent settings)
+  const sourceClaudePath = path.join(WORKTREE_REPO_PATH, '.claude');
+  const targetClaudePath = path.join(worktreePath, '.claude');
+
+  if (exists(sourceClaudePath)) {
+    try {
+      fs.cpSync(sourceClaudePath, targetClaudePath, { recursive: true });
+      console.log(`✅ Copied .claude directory to worktree: ${targetClaudePath}`);
+      results.push({ step: 'copy-claude', code: 0, message: 'Copied .claude directory' });
+    } catch (err) {
+      console.error(`⚠️  Failed to copy .claude directory: ${err.message}`);
+      results.push({ step: 'copy-claude', code: 1, error: err.message });
+    }
+  } else {
+    console.log(`ℹ️  No .claude directory found at ${sourceClaudePath}`);
+    results.push({ step: 'copy-claude', code: 0, message: 'No .claude directory to copy' });
+  }
+}

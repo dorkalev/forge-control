@@ -1,0 +1,5 @@
+{
+  "enabled": false,
+  "maxParallelAgents": 3,
+  "pollIntervalSeconds": 10
+}

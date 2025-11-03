@@ -1,0 +1,66 @@
+{
+  "name": "local-agent",
+  "productName": "Local Agent",
+  "version": "1.0.0",
+  "description": "Local Agent - Git Worktrees Manager",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "node migrate.js && node index.js",
+    "start:app-only": "node index.js",
+    "migrate": "node migrate.js",
+    "dev": "node migrate.js && node index.js",
+    "local-agent": "node src/index.js",
+    "dev:electron": "electron ./electron/main.cjs",
+    "app": "electron ./electron/main.cjs",
+    "app:old": "concurrently -k -s first -n SERVER,ELECTRON -c cyan,magenta \"npm:local-agent\" \"wait-on http://localhost:4665/health && npm:dev:electron\"",
+    "build": "electron-builder --mac --dir",
+    "build:prod": "electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.localagent.app",
+    "productName": "Local Agent",
+    "asarUnpack": [
+      "src/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "electron/icon.png",
+      "target": [
+        "zip",
+        "dir"
+      ]
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "tile-iterm.sh",
+      "package.json",
+      "node_modules/**/*",
+      ".env.example"
+    ],
+    "extraResources": [
+      {
+        "from": ".env.example",
+        "to": ".env.example"
+      }
+    ],
+    "directories": {
+      "buildResources": "electron",
+      "output": "dist"
+    }
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.3.2",
+    "pg": "^8.11.3",
+    "simple-git": "^3.28.0"
+  },
+  "type": "module",
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^38.2.0",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^9.0.1"
+  }
+}

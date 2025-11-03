@@ -1,0 +1,35 @@
+{
+  "action": "update",
+  "data": {
+    "id": "test-123",
+    "identifier": "DEV-999",
+    "title": "Implement user authentication system",
+    "description": "Create a secure authentication system with OAuth integration and session management. This should include login/logout functionality, password reset, and user profile management.",
+    "url": "https://linear.app/your-org/issue/DEV-456/implement-user-authentication-system",
+    "priority": "High",
+    "state": {
+      "name": "In Progress"
+    },
+    "assignee": {
+      "name": "SDLC Agent",
+      "displayName": "SDLC Agent",
+      "username": "sdlc-agent"
+    },
+    "delegate": {
+      "name": "SDLC Agent",
+      "displayName": "SDLC Agent",
+      "username": "sdlc-agent"
+    },
+    "labels": [
+      {
+        "name": "backend"
+      },
+      {
+        "name": "security"
+      }
+    ]
+  },
+  "updatedFrom": {
+    "delegateId": null
+  }
+}
