@@ -4,8 +4,9 @@ import { respond, respondHtml } from '../utils/http.js';
 import { runCommand } from '../utils/command.js';
 import { exists } from '../services/worktree.js';
 import { getOpenPRsToBase } from '../services/github.js';
+import { getUserAssignedIssues } from '../services/linear.js';
 import { renderRootPage } from '../views/root.js';
-import { WORKTREE_REPO_PATH, LOCAL_DEV_URL } from '../config/env.js';
+import { WORKTREE_REPO_PATH, LOCAL_DEV_URL, LINEAR_API_KEY, LINEAR_USERNAME } from '../config/env.js';
 
 export async function handleRoot(req, res) {
   const accept = (req.headers['accept'] || '').toString();
@@ -213,6 +214,7 @@ LOCAL_AGENT_PORT=4665
     const worktrees = await getWorktrees();
     const existingBranches = new Set(worktrees.map(wt => wt.branch));
     const openPRs = await getOpenPRs(existingBranches);
+    const linearIssues = await getLinearIssues(existingBranches);
     const tmuxSessions = await getTmuxSessions(worktrees);
 
     // Render HTML
@@ -220,7 +222,7 @@ LOCAL_AGENT_PORT=4665
       datadog: process.env.DATADOG_DASHBOARD_URL || '',
       sentry: process.env.SENTRY_DASHBOARD_URL || ''
     };
-    const html = renderRootPage(worktrees, openPRs, tmuxSessions, LOCAL_DEV_URL, dashboardUrls);
+    const html = renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, LOCAL_DEV_URL, dashboardUrls);
     return respondHtml(res, 200, html);
   } catch (err) {
     console.error('Error rendering root page:', err);
@@ -285,9 +287,43 @@ async function getOpenPRs(existingBranches) {
   }
 }
 
+async function getLinearIssues(existingBranches) {
+  if (!LINEAR_API_KEY || !LINEAR_USERNAME) {
+    return [];
+  }
+
+  try {
+    const issues = await getUserAssignedIssues(LINEAR_USERNAME);
+    // Filter out issues that already have worktrees
+    return issues
+      .filter(issue => {
+        const branch = issue.branchName || issue.identifier.toLowerCase().replace(/-/g, '_');
+        return !existingBranches.has(branch);
+      })
+      .map(issue => ({
+        identifier: issue.identifier,
+        title: issue.title,
+        url: issue.url,
+        state: issue.state?.name || 'Unknown',
+        priority: issue.priority,
+        branchName: issue.branchName
+      }));
+  } catch (err) {
+    console.log('⚠️ Could not fetch Linear issues:', err.message);
+    return [];
+  }
+}
+
 async function getTmuxSessions(worktrees) {
-  const tmuxListResult = await runCommand('tmux', ['list-sessions', '-F', '#{session_name}']);
   const sessions = [];
+
+  let tmuxListResult;
+  try {
+    tmuxListResult = await runCommand('tmux', ['list-sessions', '-F', '#{session_name}']);
+  } catch (err) {
+    // tmux not installed or not available, return empty sessions
+    return sessions;
+  }
 
   if (tmuxListResult.code === 0 && tmuxListResult.stdout.trim()) {
     const sessionNames = tmuxListResult.stdout.trim().split('\n');

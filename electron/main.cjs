@@ -14,18 +14,21 @@ function startServer() {
 
     // Determine the correct path based on whether app is packaged
     // Use app.asar.unpacked for files that need to be extracted from asar
+    const sdlcRoot = process.env.SDLC_ROOT || path.join(__dirname, "..");
     const serverPath = app.isPackaged
       ? path.join(process.resourcesPath, "app.asar.unpacked", "src", "index.js")
-      : path.join(__dirname, "..", "src", "index.js");
+      : path.join(sdlcRoot, "src", "index.js");
 
     console.log("📍 Server path:", serverPath);
     console.log("📍 Server exists:", require("fs").existsSync(serverPath));
 
-    // Get the working directory (where .env should be)
-    // For packaged apps, use a user data directory
-    const cwd = app.isPackaged
-      ? app.getPath('userData')
-      : path.join(__dirname, "..");
+    // Get the working directory (where .env/.sdlc should be)
+    // Priority: SDLC_CONFIG_DIR (set by CLI) > packaged user data dir > dev mode dir
+    const cwd = process.env.SDLC_CONFIG_DIR
+      ? process.env.SDLC_CONFIG_DIR
+      : (app.isPackaged
+        ? app.getPath('userData')
+        : path.join(__dirname, ".."));
 
     // In packaged mode, ensure .env.example exists in userData for reference
     if (app.isPackaged) {
@@ -65,11 +68,13 @@ function startServer() {
 
     // Start the server process
     serverProcess = spawn("node", [serverPath], {
-      cwd: cwd,
+      cwd: sdlcRoot,  // Run from sdlc root so relative imports work
       env: {
         ...process.env,
         PATH: fullPath,
-        LOCAL_AGENT_CONFIG_DIR: cwd  // Pass config directory to server
+        LOCAL_AGENT_CONFIG_DIR: cwd,  // Pass config directory to server
+        SDLC_CONFIG_DIR: cwd,  // Also set SDLC_CONFIG_DIR for consistency
+        SDLC_ROOT: sdlcRoot
       },
       stdio: ["ignore", "pipe", "pipe"]
     });

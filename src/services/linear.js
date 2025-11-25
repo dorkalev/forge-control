@@ -379,3 +379,101 @@ export async function getSDLCAssignedIssues() {
   console.log(`✅ [Linear] ${activeIssues.length} active issues need agents`);
   return activeIssues;
 }
+
+/**
+ * Get issues assigned to a specific user
+ */
+export async function getUserAssignedIssues(username) {
+  if (!username) {
+    console.log('⚠️  [Linear] No username provided, skipping user-assigned issues fetch');
+    return [];
+  }
+
+  console.log(`🔍 [Linear] Fetching issues assigned to: ${username}`);
+
+  // First, get all users to help debug
+  try {
+    const users = await getUsers();
+    const activeUsers = users.filter(u => u.active);
+    console.log(`📋 [Linear] Available active users:`);
+    activeUsers.slice(0, 5).forEach(u => {
+      console.log(`  - ${u.name} (email: ${u.email})`);
+    });
+  } catch (err) {
+    console.log('⚠️  Could not fetch users list:', err.message);
+  }
+
+  const query = `
+    query {
+      issues(
+        filter: {
+          assignee: { name: { eq: "${username}" } }
+        }
+      ) {
+        nodes {
+          id
+          identifier
+          title
+          description
+          state {
+            name
+            type
+          }
+          assignee {
+            id
+            name
+            displayName
+            email
+          }
+          branchName
+          url
+          priority
+        }
+      }
+    }
+  `;
+
+  try {
+    const data = await executeQuery(query);
+
+    if (data.errors) {
+      console.error('❌ [Linear] Query failed:', JSON.stringify(data.errors, null, 2));
+      throw new Error(data.errors[0]?.message || 'Linear API error');
+    }
+
+    const allIssues = data.data?.issues?.nodes || [];
+    console.log(`📊 [Linear] Found ${allIssues.length} issues for exact username "${username}"`);
+
+    // Log assignee info for debugging
+    if (allIssues.length > 0) {
+      allIssues.slice(0, 3).forEach(issue => {
+        console.log(`  📋 ${issue.identifier}: assignee = ${issue.assignee?.name} (${issue.assignee?.displayName}, ${issue.assignee?.email}), state = ${issue.state?.name} (type: ${issue.state?.type})`);
+      });
+    }
+
+    // Only include Todo, Backlog and In Progress issues (exclude Done, In Review)
+    const activeIssues = allIssues.filter(issue => {
+      const stateType = issue.state?.type || '';
+      const stateName = (issue.state?.name || '').toLowerCase();
+
+      // Exclude completed
+      if (stateType === 'completed') {
+        return false;
+      }
+
+      // Exclude in review
+      if (stateName.includes('review')) {
+        return false;
+      }
+
+      // Include "backlog", "unstarted" (Todo) and "started" (In Progress)
+      return (stateType === 'backlog' || stateType === 'unstarted' || stateType === 'started');
+    });
+
+    console.log(`✅ [Linear] ${activeIssues.length} active issues for ${username}`);
+    return activeIssues;
+  } catch (err) {
+    console.error(`❌ [Linear] Failed to fetch issues for ${username}:`, err.message);
+    return [];
+  }
+}

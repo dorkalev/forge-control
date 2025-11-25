@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "description": "Local Agent - Git Worktrees Manager",
   "main": "electron/main.cjs",
+  "bin": {
+    "sdlc": "./bin/sdlc.cjs"
+  },
   "scripts": {
     "start": "node migrate.js && node index.js",
     "start:app-only": "node index.js",

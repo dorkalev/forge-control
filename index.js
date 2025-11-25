@@ -889,10 +889,10 @@ const server = http.createServer(async (req, res) => {
 
       // Send email notifications
       const resendApiKey = process.env.RESEND_API_KEY;
-      const aTeamEmails = (process.env.A_TEAM_EMAILS || '').split(',').map(e => e.trim()).filter(e => e);
+      const recipientEmails = (process.env.RELEASE_NOTIFICATION_EMAILS || '').split(',').map(e => e.trim()).filter(e => e);
 
-      if (resendApiKey && aTeamEmails.length > 0) {
-        for (const toEmail of aTeamEmails) {
+      if (resendApiKey && recipientEmails.length > 0) {
+        for (const toEmail of recipientEmails) {
           try {
             // Basic markdown to HTML conversion
             const htmlContent = release_notes

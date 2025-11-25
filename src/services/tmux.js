@@ -2,8 +2,12 @@ import path from 'path';
 import { runCommand } from '../utils/command.js';
 
 export async function isTmuxInstalled() {
-  const result = await runCommand('which', ['tmux']);
-  return result.code === 0;
+  try {
+    const result = await runCommand('which', ['tmux']);
+    return result.code === 0;
+  } catch (err) {
+    return false;
+  }
 }
 
 export async function sessionExists(sessionName) {
@@ -120,14 +124,19 @@ export async function tileAllWindows(scriptDir) {
  * List all tmux sessions
  */
 export async function listAllSessions() {
-  const result = await runCommand('tmux', ['list-sessions', '-F', '#{session_name}']);
+  try {
+    const result = await runCommand('tmux', ['list-sessions', '-F', '#{session_name}']);
 
-  if (result.code !== 0) {
-    return []; // No sessions or tmux not running
+    if (result.code !== 0) {
+      return []; // No sessions or tmux not running
+    }
+
+    return result.stdout
+      .split('\n')
+      .filter(line => line.trim())
+      .map(name => ({ name: name.trim() }));
+  } catch (err) {
+    // tmux not installed or not available
+    return [];
   }
-
-  return result.stdout
-    .split('\n')
-    .filter(line => line.trim())
-    .map(name => ({ name: name.trim() }));
 }

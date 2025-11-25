@@ -60,8 +60,8 @@ export async function handleReleaseNotify(req, res) {
       });
     }
 
-    // Get a-team email list
-    const aTeamEmails = (process.env.A_TEAM_EMAILS || '')
+    // Get recipient email list
+    const recipientEmails = (process.env.RELEASE_NOTIFICATION_EMAILS || '')
       .split(',')
       .map(email => email.trim())
       .filter(email => email);
@@ -88,8 +88,8 @@ export async function handleReleaseNotify(req, res) {
     }
 
     // Send email notifications
-    if (aTeamEmails.length > 0) {
-      for (const toEmail of aTeamEmails) {
+    if (recipientEmails.length > 0) {
+      for (const toEmail of recipientEmails) {
         const emailResult = await sendReleaseEmail({
           toEmail,
           tag,

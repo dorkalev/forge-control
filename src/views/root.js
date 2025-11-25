@@ -1,5 +1,5 @@
 // Root page view with complete original UI design
-export function renderRootPage(worktrees, openPRs, tmuxSessions, localDevUrl = 'http://localhost:8001', dashboardUrls = {}) {
+export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, localDevUrl = 'http://localhost:8001', dashboardUrls = {}) {
   const worktreeRows = worktrees.map(wt => {
     const ageClass = wt.ageInDays > 21 ? 'age-old' : wt.ageInDays > 14 ? 'age-warning' : 'age-fresh';
     const ageText = wt.ageInDays === 0 ? 'Today' : wt.ageInDays === 1 ? '1 day' : `${wt.ageInDays} days`;
@@ -54,6 +54,31 @@ export function renderRootPage(worktrees, openPRs, tmuxSessions, localDevUrl = '
       </td>
       <td class="actions-cell">
         <button onclick="createWorktree('${pr.branch}')" class="action-btn btn-run" id="create-${prId}">✨ Worktree</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const linearIssueRows = linearIssues.map(issue => {
+    const issueId = issue.identifier.replace(/[^a-zA-Z0-9]/g, '-');
+    const branch = issue.branchName || issue.identifier.toLowerCase().replace(/-/g, '_');
+    const priorityEmoji = issue.priority === 1 ? '🔥' : issue.priority === 2 ? '⚠️' : issue.priority === 3 ? '📌' : '🔵';
+    return `
+    <tr>
+      <td colspan="3" style="padding: 12px; color: #1f2937;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>${priorityEmoji}</span>
+          <div style="flex: 1;">
+            <a href="${issue.url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">
+              ${issue.identifier}: ${issue.title}
+            </a>
+            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+              <strong>${branch}</strong> · ${issue.state}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td class="actions-cell">
+        <button onclick="createWorktree('${branch}')" class="action-btn btn-run" id="create-linear-${issueId}">✨ Worktree</button>
       </td>
     </tr>`;
   }).join('');
@@ -560,6 +585,18 @@ export function renderRootPage(worktrees, openPRs, tmuxSessions, localDevUrl = '
           <th>Actions</th>
         </tr></thead>
         <tbody>${prRows}</tbody>
+      </table>
+    </div>` : ''}
+
+    ${linearIssues.length > 0 ? `
+    <div class="section">
+      <div class="section-header">🎯 My Linear Issues (${linearIssues.length})</div>
+      <table>
+        <thead><tr>
+          <th colspan="3">Issue</th>
+          <th>Actions</th>
+        </tr></thead>
+        <tbody>${linearIssueRows}</tbody>
       </table>
     </div>` : ''}
 
