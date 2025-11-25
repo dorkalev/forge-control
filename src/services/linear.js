@@ -451,7 +451,7 @@ export async function getUserAssignedIssues(username) {
       });
     }
 
-    // Only include Todo, Backlog and In Progress issues (exclude Done, In Review)
+    // Only include Todo and In Progress issues (exclude Backlog, Done, In Review)
     const activeIssues = allIssues.filter(issue => {
       const stateType = issue.state?.type || '';
       const stateName = (issue.state?.name || '').toLowerCase();
@@ -466,8 +466,13 @@ export async function getUserAssignedIssues(username) {
         return false;
       }
 
-      // Include "backlog", "unstarted" (Todo) and "started" (In Progress)
-      return (stateType === 'backlog' || stateType === 'unstarted' || stateType === 'started');
+      // Exclude backlog
+      if (stateType === 'backlog') {
+        return false;
+      }
+
+      // Only include "unstarted" (Todo) and "started" (In Progress)
+      return (stateType === 'unstarted' || stateType === 'started');
     });
 
     console.log(`✅ [Linear] ${activeIssues.length} active issues for ${username}`);
