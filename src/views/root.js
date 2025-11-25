@@ -62,8 +62,13 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     const issueId = issue.identifier.replace(/[^a-zA-Z0-9]/g, '-');
     const branch = issue.branchName || issue.identifier.toLowerCase().replace(/-/g, '_');
     const priorityEmoji = issue.priority === 1 ? '🔥' : issue.priority === 2 ? '⚠️' : issue.priority === 3 ? '📌' : '🔵';
+
+    // Generate parameterized branch name: feature/{identifier}-{slugified-title}
+    const titleSlug = issue.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 50);
+    const parameterizedBranch = 'feature/' + issue.identifier.toLowerCase() + '-' + titleSlug;
+
     return `
-    <tr>
+    <tr data-issue-id="${issueId}">
       <td colspan="3" style="padding: 12px; color: #1f2937;">
         <div style="display: flex; align-items: center; gap: 12px;">
           <span>${priorityEmoji}</span>
@@ -72,13 +77,22 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
               ${issue.identifier}: ${issue.title}
             </a>
             <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
-              <strong>${branch}</strong> · ${issue.state}
+              <strong id="branch-name-${issueId}">Checking...</strong> · ${issue.state}
             </div>
           </div>
         </div>
       </td>
       <td class="actions-cell">
-        <button onclick="createWorktree('${branch}')" class="action-btn btn-run" id="create-linear-${issueId}">✨ Worktree</button>
+        <button
+          id="btn-linear-${issueId}"
+          data-issue-id="${issue.id || issue.identifier}"
+          data-issue-identifier="${issue.identifier}"
+          data-branch="${parameterizedBranch}"
+          data-title="${issue.title.replace(/"/g, '&quot;')}"
+          class="action-btn btn-run"
+          style="display: none;">
+          Loading...
+        </button>
       </td>
     </tr>`;
   }).join('');
@@ -939,7 +953,13 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
 
     async function createWorktree(branch) {
       const prId = branch.replace(/[^a-zA-Z0-9]/g, '-');
-      const btn = document.getElementById(\`create-\${prId}\`);
+      let btn = document.getElementById(\`create-\${prId}\`);
+
+      // If not found, try Linear issue button ID format
+      if (!btn) {
+        btn = document.getElementById(\`create-linear-\${prId}\`);
+      }
+
       if (!btn) return;
 
       btn.disabled = true;
@@ -1373,8 +1393,169 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       return 'just now';
     }
 
+    // Check branch existence for Linear issues and update buttons
+    async function checkLinearIssueBranches() {
+      const issueRows = document.querySelectorAll('[data-issue-id]');
+
+      for (const row of issueRows) {
+        const issueId = row.getAttribute('data-issue-id');
+        const btn = document.getElementById(\`btn-linear-\${issueId}\`);
+        const branchNameEl = document.getElementById(\`branch-name-\${issueId}\`);
+
+        if (!btn) continue;
+
+        const branch = btn.getAttribute('data-branch');
+        const issueDataId = btn.getAttribute('data-issue-id');
+        const issueIdentifier = btn.getAttribute('data-issue-identifier');
+
+        try {
+          // Check if branch exists and if it has a PR
+          const res = await fetch(\`/api/branch-exists?branchName=\${encodeURIComponent(branch)}\`);
+          const data = await res.json();
+
+          if (branchNameEl) {
+            branchNameEl.textContent = branch;
+          }
+
+          if (!data.exists) {
+            // Branch doesn't exist - show branch! button (creates branch + PR)
+            btn.textContent = '🌿 Branch!';
+            btn.onclick = () => createBranch(issueDataId, issueIdentifier, btn);
+          } else if (data.exists && !data.hasPR) {
+            // Branch exists but no PR - show create PR button
+            btn.textContent = '📝 Create PR';
+            btn.onclick = () => createPROnly(issueDataId, issueIdentifier, branch, btn);
+          } else {
+            // Branch exists and has PR - show worktree button
+            btn.textContent = '✨ Worktree';
+            btn.onclick = () => createWorktree(branch, btn);
+          }
+
+          btn.style.display = 'inline-block';
+        } catch (err) {
+          console.error('Error checking branch:', err);
+          btn.textContent = '❌ Error';
+          btn.style.display = 'inline-block';
+          btn.disabled = true;
+        }
+      }
+    }
+
+    // Create a new branch from staging
+    async function createBranch(issueId, issueIdentifier, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Creating branch...';
+
+      try {
+        const res = await fetch('/api/create-branch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            issueId,
+            issueIdentifier
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.ok) {
+          btn.textContent = '✅ Branch created!';
+
+          // After a short delay, change button to worktree button
+          setTimeout(() => {
+            btn.textContent = '✨ Worktree';
+            btn.disabled = false;
+            btn.onclick = () => createWorktree(data.branchName);
+          }, 1500);
+        } else {
+          throw new Error(data.error || 'Failed to create branch');
+        }
+      } catch (err) {
+        console.error('Error creating branch:', err);
+        alert('Failed to create branch: ' + err.message);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    // Create PR only (for existing branch)
+    async function createPROnly(issueId, issueIdentifier, branchName, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Creating PR...';
+
+      try {
+        const res = await fetch('/api/create-pr-only', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            issueId,
+            issueIdentifier,
+            branchName
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.ok) {
+          btn.textContent = '✅ PR created!';
+
+          // After a short delay, change button to worktree button
+          setTimeout(() => {
+            btn.textContent = '✨ Worktree';
+            btn.disabled = false;
+            btn.onclick = () => createWorktree(branchName);
+          }, 1500);
+        } else {
+          throw new Error(data.error || 'Failed to create PR');
+        }
+      } catch (err) {
+        console.error('Error creating PR:', err);
+        alert('Failed to create PR: ' + err.message);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    // Create worktree for a branch
+    async function createWorktree(branchName, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Creating worktree...';
+
+      try {
+        console.log('Creating worktree for branch:', branchName);
+
+        const params = new URLSearchParams({ branch: branchName });
+        const fullUrl = '/worktree?' + params.toString();
+
+        const response = await fetch(fullUrl, {
+          method: 'GET'
+        });
+
+        const data = await response.json();
+
+        if (data.ok) {
+          btn.textContent = '✅ Worktree created!';
+          // Reload the page to show the new worktree after a short delay
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        } else {
+          throw new Error(data.error || 'Failed to create worktree');
+        }
+      } catch (err) {
+        console.error('Error creating worktree:', err);
+        alert('Failed to create worktree: ' + err.message);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
     fetchStatus();
     fetchRenderStatus();
+    checkLinearIssueBranches();
 
     // Refresh Render status every 60 seconds
     setInterval(fetchRenderStatus, 60000);

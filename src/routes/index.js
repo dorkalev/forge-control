@@ -11,6 +11,7 @@ import { handleGetUnassignedIssues, handleAssignIssue, handleGetUsers } from '..
 import { handleAutopilotStart, handleAutopilotStop, handleAutopilotStatus, handleAutopilotSetMax } from '../handlers/autopilot.js';
 import { handleRenderStatus } from '../handlers/render.js';
 import { handleIssuesDiff, handleGenerateChangelog } from '../handlers/issues-diff.js';
+import { handleCreateBranch, handleBranchExists, handleCreatePROnly } from '../handlers/branch.js';
 import { respond } from '../utils/http.js';
 import { PORT, REPO_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
 
@@ -68,6 +69,10 @@ export async function routeRequest(req, res, pathname, query) {
 
     if (pathname === '/api/issues-diff/generate-changelog') {
       return await handleGenerateChangelog(req, res, query);
+    }
+
+    if (pathname === '/api/branch-exists') {
+      return await handleBranchExists(req, res);
     }
   }
 
@@ -135,6 +140,14 @@ export async function routeRequest(req, res, pathname, query) {
 
     if (pathname === '/api/autopilot/set-max') {
       return await handleAutopilotSetMax(req, res);
+    }
+
+    if (pathname === '/api/create-branch') {
+      return await handleCreateBranch(req, res);
+    }
+
+    if (pathname === '/api/create-pr-only') {
+      return await handleCreatePROnly(req, res);
     }
   }
 

@@ -132,3 +132,29 @@ export async function getPullRequest(prNumber) {
 
   return response.json();
 }
+
+export async function createPullRequest({ owner, repo, title, head, base, body, draft = false }) {
+  if (!isConfigured()) {
+    throw new Error('GitHub credentials not configured');
+  }
+
+  const url = `https://api.github.com/repos/${owner}/${repo}/pulls`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({
+      title,
+      head,
+      base,
+      body,
+      draft
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`GitHub API error: ${response.status} - ${error}`);
+  }
+
+  return response.json();
+}

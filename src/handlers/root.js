@@ -287,6 +287,17 @@ async function getOpenPRs(existingBranches) {
   }
 }
 
+function slugify(text) {
+  if (!text || typeof text !== 'string') {
+    return 'untitled';
+  }
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 50) || 'untitled';
+}
+
 async function getLinearIssues(existingBranches) {
   if (!LINEAR_API_KEY || !LINEAR_USERNAME) {
     return [];
@@ -297,10 +308,19 @@ async function getLinearIssues(existingBranches) {
     // Filter out issues that already have worktrees
     return issues
       .filter(issue => {
-        const branch = issue.branchName || issue.identifier.toLowerCase().replace(/-/g, '_');
-        return !existingBranches.has(branch);
+        // Check Linear's branchName first (if Linear set it)
+        if (issue.branchName && existingBranches.has(issue.branchName)) {
+          return false;
+        }
+
+        // Generate parameterized branch name to match what we create
+        const titleSlug = slugify(issue.title);
+        const parameterizedBranch = `feature/${issue.identifier.toLowerCase()}-${titleSlug}`;
+
+        return !existingBranches.has(parameterizedBranch);
       })
       .map(issue => ({
+        id: issue.id,
         identifier: issue.identifier,
         title: issue.title,
         url: issue.url,
