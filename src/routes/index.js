@@ -12,8 +12,10 @@ import { handleAutopilotStart, handleAutopilotStop, handleAutopilotStatus, handl
 import { handleRenderStatus } from '../handlers/render.js';
 import { handleIssuesDiff, handleGenerateChangelog } from '../handlers/issues-diff.js';
 import { handleCreateBranch, handleBranchExists, handleCreatePROnly } from '../handlers/branch.js';
+import { handleListProjects, handleSetActiveProject, handleScanProjects } from '../handlers/projects.js';
 import { respond } from '../utils/http.js';
 import { PORT, REPO_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
+import { getProjectContextSync } from '../services/projects.js';
 
 export async function routeRequest(req, res, pathname, query) {
   // Handle GET routes
@@ -23,12 +25,18 @@ export async function routeRequest(req, res, pathname, query) {
     }
 
     if (pathname === '/health') {
+      const ctx = getProjectContextSync();
       return respond(res, 200, {
         ok: true,
         port: PORT,
-        repoPath: REPO_PATH,
-        worktreeRepoPath: WORKTREE_REPO_PATH
+        repoPath: ctx?.REPO_PATH || REPO_PATH,
+        worktreeRepoPath: ctx?.WORKTREE_REPO_PATH || WORKTREE_REPO_PATH,
+        activeProject: ctx ? true : false
       });
+    }
+
+    if (pathname === '/api/projects') {
+      return await handleListProjects(req, res);
     }
 
     if (pathname === '/checkout') {
@@ -148,6 +156,14 @@ export async function routeRequest(req, res, pathname, query) {
 
     if (pathname === '/api/create-pr-only') {
       return await handleCreatePROnly(req, res);
+    }
+
+    if (pathname === '/api/projects/active') {
+      return await handleSetActiveProject(req, res);
+    }
+
+    if (pathname === '/api/projects/scan') {
+      return await handleScanProjects(req, res);
     }
   }
 

@@ -6,11 +6,24 @@ import { runCommand } from '../utils/command.js';
 import * as github from '../services/github.js';
 import { getIssue } from '../services/linear.js';
 import { REPO_PATH, GITHUB_REPO_OWNER, GITHUB_REPO_NAME } from '../config/env.js';
+import { getProjectContextSync } from '../services/projects.js';
 import path from 'path';
 import fs from 'fs';
 
 const MAIN_BRANCH = process.env.DEFAULT_BASE_BRANCH || 'main';
 const STAGING_BRANCH = 'staging';
+
+/**
+ * Get effective config, preferring project context over env vars
+ */
+function getEffectiveConfig() {
+  const ctx = getProjectContextSync();
+  return {
+    repoPath: ctx?.REPO_PATH || REPO_PATH,
+    githubOwner: ctx?.GITHUB_REPO_OWNER || GITHUB_REPO_OWNER,
+    githubRepo: ctx?.GITHUB_REPO_NAME || GITHUB_REPO_NAME
+  };
+}
 
 /**
  * Parse JSON body from request
@@ -49,11 +62,11 @@ function slugify(text) {
 /**
  * Check if a branch exists locally or remotely
  */
-async function branchExists(branchName) {
+async function branchExists(branchName, repoPath) {
   try {
     // Check local branches
     const localResult = await runCommand('git', ['branch', '--list', branchName], {
-      cwd: REPO_PATH
+      cwd: repoPath
     });
 
     if (localResult.stdout.trim()) {
@@ -62,7 +75,7 @@ async function branchExists(branchName) {
 
     // Check remote branches
     const remoteResult = await runCommand('git', ['branch', '-r', '--list', `origin/${branchName}`], {
-      cwd: REPO_PATH
+      cwd: repoPath
     });
 
     return remoteResult.stdout.trim() !== '';
@@ -75,26 +88,26 @@ async function branchExists(branchName) {
 /**
  * Ensure staging branch exists, create it from main if it doesn't
  */
-async function ensureStagingExists() {
+async function ensureStagingExists(repoPath) {
   console.log(`🔍 [Branch] Checking if ${STAGING_BRANCH} exists...`);
 
   // Fetch latest from remote
-  await runCommand('git', ['fetch', 'origin'], { cwd: REPO_PATH });
+  await runCommand('git', ['fetch', 'origin'], { cwd: repoPath });
 
-  const exists = await branchExists(STAGING_BRANCH);
+  const exists = await branchExists(STAGING_BRANCH, repoPath);
 
   if (!exists) {
     console.log(`🌿 [Branch] ${STAGING_BRANCH} doesn't exist, creating from ${MAIN_BRANCH}...`);
 
     // Checkout main and pull latest
-    await runCommand('git', ['checkout', MAIN_BRANCH], { cwd: REPO_PATH });
-    await runCommand('git', ['pull', 'origin', MAIN_BRANCH], { cwd: REPO_PATH });
+    await runCommand('git', ['checkout', MAIN_BRANCH], { cwd: repoPath });
+    await runCommand('git', ['pull', 'origin', MAIN_BRANCH], { cwd: repoPath });
 
     // Create staging from main
-    await runCommand('git', ['checkout', '-b', STAGING_BRANCH], { cwd: REPO_PATH });
+    await runCommand('git', ['checkout', '-b', STAGING_BRANCH], { cwd: repoPath });
 
     // Push staging to remote
-    await runCommand('git', ['push', '-u', 'origin', STAGING_BRANCH], { cwd: REPO_PATH });
+    await runCommand('git', ['push', '-u', 'origin', STAGING_BRANCH], { cwd: repoPath });
 
     console.log(`✅ [Branch] Created ${STAGING_BRANCH} from ${MAIN_BRANCH}`);
   } else {
@@ -118,10 +131,13 @@ export async function handleCreateBranch(req, res) {
       });
     }
 
-    if (!REPO_PATH) {
+    const config = getEffectiveConfig();
+
+    if (!config.repoPath) {
       return respond(res, 500, {
         ok: false,
-        error: 'REPO_PATH not configured'
+        error: 'No project selected and REPO_PATH not configured',
+        requiresProjectSelection: true
       });
     }
 
@@ -144,7 +160,7 @@ export async function handleCreateBranch(req, res) {
     console.log(`📋 [Branch] Branch name: ${branchName}`);
 
     // Check if branch already exists
-    const exists = await branchExists(branchName);
+    const exists = await branchExists(branchName, config.repoPath);
     if (exists) {
       console.log(`⚠️  [Branch] Branch ${branchName} already exists`);
       return respond(res, 409, {
@@ -155,21 +171,21 @@ export async function handleCreateBranch(req, res) {
     }
 
     // Ensure staging branch exists
-    await ensureStagingExists();
+    await ensureStagingExists(config.repoPath);
 
     // Checkout staging and pull latest
     console.log(`🔄 [Branch] Checking out ${STAGING_BRANCH}...`);
-    await runCommand('git', ['checkout', STAGING_BRANCH], { cwd: REPO_PATH });
+    await runCommand('git', ['checkout', STAGING_BRANCH], { cwd: config.repoPath });
 
     console.log(`🔄 [Branch] Pulling latest ${STAGING_BRANCH}...`);
-    await runCommand('git', ['pull', 'origin', STAGING_BRANCH], { cwd: REPO_PATH });
+    await runCommand('git', ['pull', 'origin', STAGING_BRANCH], { cwd: config.repoPath });
 
     // Create new branch from staging
     console.log(`🌿 [Branch] Creating branch: ${branchName}`);
-    await runCommand('git', ['checkout', '-b', branchName], { cwd: REPO_PATH });
+    await runCommand('git', ['checkout', '-b', branchName], { cwd: config.repoPath });
 
     // Create issues directory if it doesn't exist
-    const issuesDir = path.join(REPO_PATH, 'issues');
+    const issuesDir = path.join(config.repoPath, 'issues');
     if (!fs.existsSync(issuesDir)) {
       console.log('📁 [Branch] Creating issues directory...');
       fs.mkdirSync(issuesDir, { recursive: true });
@@ -201,15 +217,15 @@ ${issue.description || 'No description provided'}
 
     // Stage and commit the file
     console.log('➕ [Branch] Adding issue file to git...');
-    await runCommand('git', ['add', issueFilePath], { cwd: REPO_PATH });
+    await runCommand('git', ['add', issueFilePath], { cwd: config.repoPath });
 
     console.log('💾 [Branch] Committing...');
     const commitMessage = `Add issue file for ${issueIdentifier}`;
-    await runCommand('git', ['commit', '-m', commitMessage], { cwd: REPO_PATH });
+    await runCommand('git', ['commit', '-m', commitMessage], { cwd: config.repoPath });
 
     // Push branch to origin
     console.log('⬆️  [Branch] Pushing to origin...');
-    await runCommand('git', ['push', '-u', 'origin', branchName], { cwd: REPO_PATH });
+    await runCommand('git', ['push', '-u', 'origin', branchName], { cwd: config.repoPath });
 
     // Create draft PR using GitHub API
     console.log('📝 [Branch] Creating draft PR...');
@@ -220,8 +236,8 @@ ${issue.description || 'No description provided'}
 **Linear Issue:** ${issue.url}`;
 
     const pr = await github.createPullRequest({
-      owner: GITHUB_REPO_OWNER,
-      repo: GITHUB_REPO_NAME,
+      owner: config.githubOwner,
+      repo: config.githubRepo,
       title: `${issueIdentifier}: ${issue.title}`,
       head: branchName,
       base: STAGING_BRANCH,
@@ -232,7 +248,7 @@ ${issue.description || 'No description provided'}
     console.log(`✅ [Branch] Draft PR created: ${pr.html_url}`);
 
     // Go back to staging
-    await runCommand('git', ['checkout', STAGING_BRANCH], { cwd: REPO_PATH });
+    await runCommand('git', ['checkout', STAGING_BRANCH], { cwd: config.repoPath });
 
     return respond(res, 200, {
       ok: true,
@@ -266,7 +282,17 @@ export async function handleBranchExists(req, res) {
       });
     }
 
-    const exists = await branchExists(branchName);
+    const config = getEffectiveConfig();
+
+    if (!config.repoPath) {
+      return respond(res, 500, {
+        ok: false,
+        error: 'No project selected',
+        requiresProjectSelection: true
+      });
+    }
+
+    const exists = await branchExists(branchName, config.repoPath);
 
     let hasPR = false;
     if (exists) {
@@ -311,6 +337,16 @@ export async function handleCreatePROnly(req, res) {
       });
     }
 
+    const config = getEffectiveConfig();
+
+    if (!config.repoPath) {
+      return respond(res, 500, {
+        ok: false,
+        error: 'No project selected',
+        requiresProjectSelection: true
+      });
+    }
+
     console.log(`📝 [Branch] Creating PR for existing branch: ${branchName}`);
 
     // Fetch issue details from Linear
@@ -323,7 +359,7 @@ export async function handleCreatePROnly(req, res) {
     }
 
     // Check if branch exists
-    const exists = await branchExists(branchName);
+    const exists = await branchExists(branchName, config.repoPath);
     if (!exists) {
       return respond(res, 404, {
         ok: false,
@@ -332,12 +368,12 @@ export async function handleCreatePROnly(req, res) {
     }
 
     // Ensure staging branch exists
-    await ensureStagingExists();
+    await ensureStagingExists(config.repoPath);
 
     // Verify the feature branch exists on remote
     console.log(`🔍 [Branch] Verifying ${branchName} exists on remote...`);
     const remoteBranchCheck = await runCommand('git', ['ls-remote', '--heads', 'origin', `refs/heads/${branchName}`], {
-      cwd: REPO_PATH
+      cwd: config.repoPath
     });
 
     console.log(`🔍 [Branch] Remote check result: ${remoteBranchCheck.stdout.trim() ? 'Found' : 'Not found'}`);
@@ -348,14 +384,14 @@ export async function handleCreatePROnly(req, res) {
     if (!remoteBranchCheck.stdout.trim()) {
       console.log(`⚠️  [Branch] Branch ${branchName} not found on remote, pushing...`);
       // Branch exists locally but not on remote, push it
-      await runCommand('git', ['checkout', branchName], { cwd: REPO_PATH });
-      await runCommand('git', ['push', '-u', 'origin', branchName], { cwd: REPO_PATH });
+      await runCommand('git', ['checkout', branchName], { cwd: config.repoPath });
+      await runCommand('git', ['push', '-u', 'origin', branchName], { cwd: config.repoPath });
     }
 
     // Also verify staging exists on remote
     console.log(`🔍 [Branch] Verifying ${STAGING_BRANCH} exists on remote...`);
     const stagingCheck = await runCommand('git', ['ls-remote', '--heads', 'origin', `refs/heads/${STAGING_BRANCH}`], {
-      cwd: REPO_PATH
+      cwd: config.repoPath
     });
     console.log(`🔍 [Branch] Staging check result: ${stagingCheck.stdout.trim() ? 'Found' : 'Not found'}`);
     if (stagingCheck.stdout.trim()) {
@@ -368,9 +404,9 @@ export async function handleCreatePROnly(req, res) {
 
     // Create draft PR using GitHub API
     console.log('📝 [Branch] Creating draft PR...');
-    console.log(`   Owner: ${GITHUB_REPO_OWNER}`);
-    console.log(`   Repo: ${GITHUB_REPO_NAME}`);
-    console.log(`   Head: ${GITHUB_REPO_OWNER}:${branchName}`);
+    console.log(`   Owner: ${config.githubOwner}`);
+    console.log(`   Repo: ${config.githubRepo}`);
+    console.log(`   Head: ${config.githubOwner}:${branchName}`);
     console.log(`   Base: ${STAGING_BRANCH}`);
 
     const prBody = `Fixes ${issueIdentifier}
@@ -380,8 +416,8 @@ ${issue.description || 'No description provided'}
 **Linear Issue:** ${issue.url}`;
 
     const pr = await github.createPullRequest({
-      owner: GITHUB_REPO_OWNER,
-      repo: GITHUB_REPO_NAME,
+      owner: config.githubOwner,
+      repo: config.githubRepo,
       title: `${issueIdentifier}: ${issue.title}`,
       head: branchName,
       base: STAGING_BRANCH,

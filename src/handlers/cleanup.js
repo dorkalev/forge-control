@@ -4,6 +4,7 @@ import { exists } from '../services/worktree.js';
 import { getPullRequestsForBranch } from '../services/github.js';
 import { moveIssueToInReview } from '../services/linear.js';
 import { REPO_PATH, WORKTREE_REPO_PATH, LINEAR_API_KEY } from '../config/env.js';
+import { getProjectContextSync } from '../services/projects.js';
 
 export async function handleCleanupBranch(req, res) {
   if (req.method !== 'POST') {
@@ -24,11 +25,14 @@ export async function handleCleanupBranch(req, res) {
 
       const errors = [];
       const warnings = [];
-      const cwd = WORKTREE_REPO_PATH || REPO_PATH;
+
+      // Get project context or fall back to env vars
+      const ctx = getProjectContextSync();
+      const cwd = ctx?.WORKTREE_REPO_PATH || WORKTREE_REPO_PATH || ctx?.REPO_PATH || REPO_PATH;
 
       // Validate environment
       if (!cwd) {
-        return respond(res, 500, { ok: false, error: 'REPO_PATH or WORKTREE_REPO_PATH not configured' });
+        return respond(res, 500, { ok: false, error: 'No project selected and REPO_PATH not configured', requiresProjectSelection: !ctx });
       }
 
       // Verify directory exists

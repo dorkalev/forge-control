@@ -6,12 +6,18 @@ import { getBranchNameFromPath, resolveWorktreeBaseDir } from '../services/workt
 import { getPullRequestsForBranch, getPullRequest, getReviewThreads, getCheckRuns, getTags, isConfigured as isGithubConfigured } from '../services/github.js';
 import { hasUncommittedOrUnpushedChanges } from '../services/git.js';
 import { LINEAR_API_KEY, GITHUB_REPO_OWNER, GITHUB_REPO_NAME, WORKTREE_BASE_PATH, REPO_PATH } from '../config/env.js';
+import { getProjectContextSync } from '../services/projects.js';
 
 export async function handleFolderStatus(req, res, query) {
   const folderName = query.folder;
   if (!folderName) {
     return respond(res, 400, { success: false, error: 'Missing folder parameter' });
   }
+
+  // Get project context for GitHub owner/repo
+  const ctx = getProjectContextSync();
+  const githubOwner = ctx?.GITHUB_REPO_OWNER || GITHUB_REPO_OWNER;
+  const githubRepo = ctx?.GITHUB_REPO_NAME || GITHUB_REPO_NAME;
 
   try {
     const result = { success: true, folder: folderName, linear: null, github: null, git: null };
@@ -123,12 +129,12 @@ export async function handleFolderStatus(req, res, query) {
 
         // Fallback: Try searching by branch name if no PRs found from Linear
         if (prs.length === 0) {
-          console.log(`🔍 Searching for PRs with head: ${GITHUB_REPO_OWNER}:${branchName}`);
+          console.log(`🔍 Searching for PRs with head: ${githubOwner}:${branchName}`);
           prs = await getPullRequestsForBranch(branchName);
           console.log(`📊 Found ${prs.length} PRs for ${branchName}:`, prs.map(pr => `#${pr.number} (${pr.state}${pr.merged_at ? ', merged' : ''}, head: ${pr.head.ref})`).join(', '));
         }
 
-        const prDataPromises = prs.map(pr => enrichPRData(pr));
+        const prDataPromises = prs.map(pr => enrichPRData(pr, githubOwner, githubRepo));
         result.github = await Promise.all(prDataPromises);
       } catch (err) {
         console.error('Error fetching GitHub status:', err.message);
@@ -146,7 +152,7 @@ export async function handleFolderStatus(req, res, query) {
   }
 }
 
-async function enrichPRData(pr) {
+async function enrichPRData(pr, githubOwner, githubRepo) {
   const prData = {
     number: pr.number,
     title: pr.title,
@@ -203,7 +209,7 @@ async function enrichPRData(pr) {
         console.log(`🏷️  Found ${matchingTags.length} tags for PR #${pr.number}: ${matchingTags.map(t => t.name).join(', ')}`);
         prData.tags = matchingTags.map(tag => ({
           name: tag.name,
-          url: `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/tag/${tag.name}`
+          url: `https://github.com/${githubOwner}/${githubRepo}/releases/tag/${tag.name}`
         }));
       }
     } catch (err) {

@@ -1,6 +1,7 @@
 import { respond, respondHtml } from '../utils/http.js';
 import { createWorktree } from '../services/worktree.js';
 import { REPO_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
+import { getProjectContextSync } from '../services/projects.js';
 
 export async function handleWorktree(req, res, query) {
   const accept = (req.headers['accept'] || '').toString();
@@ -49,10 +50,18 @@ export async function handleWorktree(req, res, query) {
     return respondHtml(res, status, html);
   };
 
-  if (!REPO_PATH) {
-    return render(400, { ok: false, error: 'LOCAL_REPO_PATH not set' });
+  // Get project context or fall back to env vars
+  const ctx = getProjectContextSync();
+  const repoPath = ctx?.REPO_PATH || REPO_PATH;
+  const worktreeRepoPath = ctx?.WORKTREE_REPO_PATH || WORKTREE_REPO_PATH;
+
+  if (!ctx && !REPO_PATH) {
+    return render(400, { ok: false, error: 'No project selected and LOCAL_REPO_PATH not set', requiresProjectSelection: true });
   }
-  if (!WORKTREE_REPO_PATH) {
+  if (!repoPath) {
+    return render(400, { ok: false, error: 'No project selected', requiresProjectSelection: true });
+  }
+  if (!worktreeRepoPath) {
     return render(400, { ok: false, error: 'WORKTREE_REPO_PATH not set (path to the Git repo to create worktrees from)' });
   }
 

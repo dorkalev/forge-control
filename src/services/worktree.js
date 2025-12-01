@@ -2,6 +2,25 @@ import fs from 'fs';
 import path from 'path';
 import { runCommand } from '../utils/command.js';
 import { REPO_PATH, WORKTREE_BASE_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
+import { getProjectContextSync } from './projects.js';
+
+/**
+ * Get the effective repo path, preferring project context over env vars
+ */
+function getEffectiveRepoPath() {
+  const ctx = getProjectContextSync();
+  return ctx?.REPO_PATH || REPO_PATH;
+}
+
+function getEffectiveWorktreeBasePath() {
+  const ctx = getProjectContextSync();
+  return ctx?.WORKTREE_BASE_PATH || WORKTREE_BASE_PATH;
+}
+
+function getEffectiveWorktreeRepoPath() {
+  const ctx = getProjectContextSync();
+  return ctx?.WORKTREE_REPO_PATH || WORKTREE_REPO_PATH;
+}
 
 export function mapBranchToDir(branch) {
   // Keep alnum, dash, dot and underscore; replace others (including '/') with '_'
@@ -107,16 +126,18 @@ export async function getBranchNameFromPath(worktreePath) {
 }
 
 export function resolveWorktreeBaseDir() {
-  let srcDir = WORKTREE_BASE_PATH;
+  const repoPath = getEffectiveRepoPath();
+  let srcDir = getEffectiveWorktreeBasePath();
   if (!srcDir) {
     const projectFolder = process.env.PROJECT_FOLDER_NAME || 'project';
-    const looksLikeProjectSrc = path.basename(REPO_PATH) === projectFolder && path.basename(path.dirname(REPO_PATH)) === 'src';
-    srcDir = looksLikeProjectSrc ? REPO_PATH : path.join(REPO_PATH, 'src', projectFolder);
+    const looksLikeProjectSrc = path.basename(repoPath) === projectFolder && path.basename(path.dirname(repoPath)) === 'src';
+    srcDir = looksLikeProjectSrc ? repoPath : path.join(repoPath, 'src', projectFolder);
   }
   return srcDir;
 }
 
 export async function createWorktree(branch) {
+  const worktreeRepoPath = getEffectiveWorktreeRepoPath();
   const results = [];
   const srcDir = resolveWorktreeBaseDir();
 
@@ -133,7 +154,7 @@ export async function createWorktree(branch) {
   const worktreePath = path.join(srcDir, dirName);
 
   // Check if worktree already exists
-  const existingWorktrees = await listWorktrees(WORKTREE_REPO_PATH);
+  const existingWorktrees = await listWorktrees(worktreeRepoPath);
   const existing = existingWorktrees.find(wt => path.resolve(wt.path) === path.resolve(worktreePath));
 
   if (existing) {
@@ -148,10 +169,10 @@ export async function createWorktree(branch) {
   // Fetch remote and add worktree tracking remote branch
   results.push({
     step: 'fetch',
-    ...(await runCommand('git', ['fetch', '--all', '--prune'], { cwd: WORKTREE_REPO_PATH }))
+    ...(await runCommand('git', ['fetch', '--all', '--prune'], { cwd: worktreeRepoPath }))
   });
 
-  const verify = await runCommand('git', ['rev-parse', '--verify', `origin/${branch}`], { cwd: WORKTREE_REPO_PATH });
+  const verify = await runCommand('git', ['rev-parse', '--verify', `origin/${branch}`], { cwd: worktreeRepoPath });
   results.push({ step: 'verify-origin-branch', ...verify });
 
   let baseBranch = `origin/${branch}`;
@@ -162,14 +183,14 @@ export async function createWorktree(branch) {
     baseBranch = 'main';
   } else {
     // Fetch the specific branch to ensure we have the absolute latest state
-    const fetchBranch = await runCommand('git', ['fetch', 'origin', branch], { cwd: WORKTREE_REPO_PATH });
+    const fetchBranch = await runCommand('git', ['fetch', 'origin', branch], { cwd: worktreeRepoPath });
     results.push({ step: 'fetch-branch-latest', ...fetchBranch });
   }
 
   const add = await runCommand(
     'git',
     ['worktree', 'add', '-B', branch, worktreePath, baseBranch],
-    { cwd: WORKTREE_REPO_PATH }
+    { cwd: worktreeRepoPath }
   );
   results.push({ step: 'worktree-add', ...add });
 
@@ -177,7 +198,7 @@ export async function createWorktree(branch) {
 
   // Copy .env file and .claude directory to the new worktree if successful
   if (ok) {
-    await copyWorktreeFiles(worktreePath, results);
+    await copyWorktreeFiles(worktreePath, worktreeRepoPath, results);
   }
 
   return {
@@ -189,9 +210,9 @@ export async function createWorktree(branch) {
   };
 }
 
-async function copyWorktreeFiles(worktreePath, results) {
+async function copyWorktreeFiles(worktreePath, worktreeRepoPath, results) {
   // Copy .env file
-  const sourceEnvPath = path.join(WORKTREE_REPO_PATH, '.env');
+  const sourceEnvPath = path.join(worktreeRepoPath, '.env');
   const targetEnvPath = path.join(worktreePath, '.env');
 
   if (exists(sourceEnvPath)) {
@@ -209,7 +230,7 @@ async function copyWorktreeFiles(worktreePath, results) {
   }
 
   // Copy .claude directory (Claude Code subagent settings)
-  const sourceClaudePath = path.join(WORKTREE_REPO_PATH, '.claude');
+  const sourceClaudePath = path.join(worktreeRepoPath, '.claude');
   const targetClaudePath = path.join(worktreePath, '.claude');
 
   if (exists(sourceClaudePath)) {
