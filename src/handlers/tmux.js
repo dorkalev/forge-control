@@ -1,7 +1,7 @@
 import path from 'path';
 import { respond } from '../utils/http.js';
 import * as tmux from '../services/tmux.js';
-import { exists } from '../services/worktree.js';
+import { exists, readIssueDescription } from '../services/worktree.js';
 
 export async function handleOpenClaude(req, res) {
   if (req.method !== 'POST') {
@@ -12,7 +12,7 @@ export async function handleOpenClaude(req, res) {
   req.on('data', chunk => { body += chunk.toString(); });
   req.on('end', async () => {
     try {
-      const { path: directoryPath, branch, title, ticketId } = JSON.parse(body);
+      const { path: directoryPath, branch, title, ticketId, initialPrompt } = JSON.parse(body);
       if (!directoryPath || !branch) {
         return respond(res, 400, { ok: false, error: 'path and branch required' });
       }
@@ -22,8 +22,17 @@ export async function handleOpenClaude(req, res) {
         return respond(res, 400, { ok: false, error: 'tmux not installed. Install with: brew install tmux' });
       }
 
+      // Generate initial prompt from issue file if not provided
+      let prompt = initialPrompt;
+      if (!prompt) {
+        const issueInfo = await readIssueDescription(directoryPath);
+        if (issueInfo?.issueFile) {
+          prompt = `The current branch ticket is ${issueInfo.issueFile} - read it and make a plan for it. Update this file as the product description with any important technical observations and instructions. It's a high level ticket, so be essential - only add more detail if truly necessary.`;
+        }
+      }
+
       // Create or reuse session
-      const { sessionName, windowTitle } = await tmux.createClaudeSession(branch, directoryPath, title, ticketId);
+      const { sessionName, windowTitle } = await tmux.createClaudeSession(branch, directoryPath, title, ticketId, prompt);
 
       // Open in terminal
       const result = await tmux.openSessionInTerminal(sessionName, windowTitle);

@@ -62,7 +62,7 @@ class SimpleCategorizer {
   }
 
   categorizeIssues(issues) {
-    const sdlcKeywords = [
+    const forgeKeywords = [
       'document', 'spec', 'requirement', 'design', 'architecture', 'plan',
       'documentation', 'wireframe', 'mockup', 'user story', 'acceptance criteria',
       'test plan', 'strategy', 'proposal', 'rfc', 'adr', 'policy', 'procedure',
@@ -79,14 +79,14 @@ class SimpleCategorizer {
       'write', 'draft', 'define', 'establish', 'formalize', 'qa', 'testing'
     ];
 
-    const sdlcTasks = [];
+    const forgeTasks = [];
     const otherTasks = [];
 
     issues.forEach(issue => {
       const text = `${issue.title} ${issue.description || ''}`.toLowerCase();
-      const isSDLCTask = sdlcKeywords.some(keyword => text.includes(keyword));
+      const isForgeTask = forgeKeywords.some(keyword => text.includes(keyword));
 
-      if (isSDLCTask) {
+      if (isForgeTask) {
         let suggestedDocument = 'General Documentation';
 
         // Suggest specific document types based on content
@@ -100,15 +100,15 @@ class SimpleCategorizer {
           suggestedDocument = 'Disaster Recovery Plan';
         } else if (text.includes('change management')) {
           suggestedDocument = 'Change Management Document';
-        } else if (text.includes('sdlc') || text.includes('development life cycle')) {
-          suggestedDocument = 'SDLC Process Document';
+        } else if (text.includes('forge') || text.includes('development life cycle')) {
+          suggestedDocument = 'Forge Process Document';
         } else if (text.includes('security') || text.includes('compliance')) {
           suggestedDocument = 'Security/Compliance Document';
         } else if (text.includes('requirement')) {
           suggestedDocument = 'Requirements Document';
         }
 
-        sdlcTasks.push({
+        forgeTasks.push({
           id: issue.id,
           title: issue.title,
           description: issue.description || '',
@@ -145,7 +145,7 @@ class SimpleCategorizer {
     });
 
     return {
-      sdlc_document_tasks: sdlcTasks,
+      forge_document_tasks: forgeTasks,
       other_tasks: otherTasks
     };
   }
@@ -158,14 +158,14 @@ Generated: ${timestamp}
 Total Issues Analyzed: ${allIssues.length}
 
 ========================================
-SDLC DOCUMENT CREATION TASKS (${categorizedTasks.sdlc_document_tasks.length})
+FORGE DOCUMENT CREATION TASKS (${categorizedTasks.forge_document_tasks.length})
 ========================================
 
-These tasks can be completed or started by creating SDLC documents:
+These tasks can be completed or started by creating FORGE documents:
 
 `;
 
-    categorizedTasks.sdlc_document_tasks.forEach((task, index) => {
+    categorizedTasks.forge_document_tasks.forEach((task, index) => {
       report += `${index + 1}. ${task.title}
    ID: ${task.id}
    Suggested Document: ${task.suggested_document}
@@ -215,11 +215,11 @@ These tasks require implementation, bug fixes, or other non-document work:
 SUMMARY
 ========================================
 
-📋 SDLC Document Tasks: ${categorizedTasks.sdlc_document_tasks.length} tasks can be completed by creating documents
+📋 FORGE Document Tasks: ${categorizedTasks.forge_document_tasks.length} tasks can be completed by creating documents
 🔧 Implementation Tasks: ${categorizedTasks.other_tasks.length} tasks require development work
 
 NEXT STEPS:
-1. Review the SDLC document tasks above
+1. Review the FORGE document tasks above
 2. Let me know which documents you'd like me to create
 3. I can help generate templates and content for any of these documents
 
@@ -250,7 +250,7 @@ NEXT STEPS:
 
     // Also log summary to console
     console.log(`\n📊 COMPLETE SUMMARY:`);
-    console.log(`   SDLC Document Tasks: ${categorizedTasks.sdlc_document_tasks.length}`);
+    console.log(`   FORGE Document Tasks: ${categorizedTasks.forge_document_tasks.length}`);
     console.log(`   Other Tasks: ${categorizedTasks.other_tasks.length}`);
     console.log(`   Total: ${issues.length}`);
   }

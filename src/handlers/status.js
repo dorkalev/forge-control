@@ -4,9 +4,9 @@ import { respond } from '../utils/http.js';
 import { getIssue, getIssueByBranchName } from '../services/linear.js';
 import { getBranchNameFromPath, resolveWorktreeBaseDir } from '../services/worktree.js';
 import { getPullRequestsForBranch, getPullRequest, getReviewThreads, getCheckRuns, getTags, isConfigured as isGithubConfigured } from '../services/github.js';
-import { hasUncommittedOrUnpushedChanges } from '../services/git.js';
+import { hasUncommittedOrUnpushedChanges, hasUncommittedChangesForFile } from '../services/git.js';
 import { LINEAR_API_KEY, GITHUB_REPO_OWNER, GITHUB_REPO_NAME, WORKTREE_BASE_PATH, REPO_PATH } from '../config/env.js';
-import { getProjectContextSync } from '../services/projects.js';
+import { getProjectContextSync, getActiveProjectEnv } from '../services/projects.js';
 
 export async function handleFolderStatus(req, res, query) {
   const folderName = query.folder;
@@ -14,24 +14,28 @@ export async function handleFolderStatus(req, res, query) {
     return respond(res, 400, { success: false, error: 'Missing folder parameter' });
   }
 
-  // Get project context for GitHub owner/repo
+  // Get project context and env for GitHub/Linear credentials
   const ctx = getProjectContextSync();
-  const githubOwner = ctx?.GITHUB_REPO_OWNER || GITHUB_REPO_OWNER;
-  const githubRepo = ctx?.GITHUB_REPO_NAME || GITHUB_REPO_NAME;
+  const projectEnv = await getActiveProjectEnv();
+
+  const githubOwner = ctx?.GITHUB_REPO_OWNER || projectEnv?.GITHUB_REPO_OWNER || GITHUB_REPO_OWNER;
+  const githubRepo = ctx?.GITHUB_REPO_NAME || projectEnv?.GITHUB_REPO_NAME || GITHUB_REPO_NAME;
+  const githubToken = projectEnv?.GITHUB_TOKEN || null;
+  const linearApiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
 
   try {
     const result = { success: true, folder: folderName, linear: null, github: null, git: null };
 
-    // Extract Linear ticket ID from folder name
-    let linearIdMatch = folderName.match(/([A-Z]+)-(\d+)/);
-    let linearId = linearIdMatch ? linearIdMatch[0] : null;
+    // Extract Linear ticket ID from folder name (case-insensitive, then uppercase)
+    let linearIdMatch = folderName.match(/([A-Za-z]+)-(\d+)/i);
+    let linearId = linearIdMatch ? linearIdMatch[0].toUpperCase() : null;
 
     // Convert folder name to branch name: fix_aikido-... -> fix/aikido-...
     const branchName = folderName.replace(/^([^_]+)_/, '$1/');
 
-    // Get worktree path and check git status
+    // Get worktree path - prefer explicit path param, fallback to constructing from base + folder
     const worktreeBasePath = resolveWorktreeBaseDir();
-    const worktreePath = path.join(worktreeBasePath, folderName);
+    const worktreePath = query.path || path.join(worktreeBasePath, folderName);
 
     try {
       if (fs.existsSync(worktreePath)) {
@@ -42,12 +46,12 @@ export async function handleFolderStatus(req, res, query) {
     }
 
     // Fetch Linear ticket status
-    if (LINEAR_API_KEY) {
+    if (linearApiKey) {
       try {
         if (linearId) {
           // Method 1: Query by ticket ID (e.g., A-303)
           console.log(`🔍 Searching Linear by ID: ${linearId}`);
-          const issue = await getIssue(linearId);
+          const issue = await getIssue(linearId, linearApiKey);
           result.linear = issue || { error: 'Issue not found' };
           console.log(`📊 Linear response for ${linearId}:`, JSON.stringify(result.linear, null, 2));
         } else {
@@ -55,9 +59,9 @@ export async function handleFolderStatus(req, res, query) {
           console.log(`🔍 Converted folder to branch name: ${branchName}`);
 
           // Search GitHub for PRs with this branch
-          if (isGithubConfigured()) {
+          if (isGithubConfigured(githubToken) && githubOwner && githubRepo) {
             try {
-              const prs = await getPullRequestsForBranch(branchName);
+              const prs = await getPullRequestsForBranch(branchName, 'all', { owner: githubOwner, repo: githubRepo, token: githubToken });
               if (prs.length > 0) {
                 console.log(`📋 Found ${prs.length} PR(s) for branch ${branchName}`);
 
@@ -68,7 +72,7 @@ export async function handleFolderStatus(req, res, query) {
 
                 if (prLinearId) {
                   console.log(`🎯 Found Linear issue ${prLinearId} from PR #${pr.number}`);
-                  const issue = await getIssue(prLinearId);
+                  const issue = await getIssue(prLinearId, linearApiKey);
                   if (issue) {
                     result.linear = issue;
                     console.log(`📊 Linear response for ${prLinearId}:`, JSON.stringify(result.linear, null, 2));
@@ -90,8 +94,46 @@ export async function handleFolderStatus(req, res, query) {
       }
     }
 
+    // Check issue sync status (Linear vs local file)
+    result.issueSync = null;
+    if (result.linear && !result.linear.error && linearId) {
+      try {
+        const issueFilePath = path.join(worktreePath, 'issues', `${linearId}.md`);
+
+        if (fs.existsSync(issueFilePath)) {
+          const localContent = fs.readFileSync(issueFilePath, 'utf8');
+          const linearDescription = result.linear.description || '';
+
+          // Normalize for comparison (trim whitespace, normalize line endings)
+          const normalizeText = (text) => (text || '').trim().replace(/\r\n/g, '\n');
+
+          // Check if local file contains the Linear description
+          const localNormalized = normalizeText(localContent);
+          const linearNormalized = normalizeText(linearDescription);
+
+          // Simple check: does local file contain Linear description?
+          const descriptionsMatch = localNormalized.includes(linearNormalized) || linearNormalized === '';
+
+          if (!descriptionsMatch) {
+            // Check if local file has uncommitted changes
+            const hasLocalChanges = await hasUncommittedChangesForFile(worktreePath, `issues/${linearId}.md`);
+
+            result.issueSync = {
+              hasUpdate: true,
+              hasConflict: hasLocalChanges,
+              issueFile: `issues/${linearId}.md`
+            };
+
+            console.log(`🔄 Issue sync: ${linearId} - hasUpdate: true, hasConflict: ${hasLocalChanges}`);
+          }
+        }
+      } catch (err) {
+        console.error('Error checking issue sync:', err.message);
+      }
+    }
+
     // Fetch GitHub PR status
-    if (isGithubConfigured()) {
+    if (isGithubConfigured(githubToken) && githubOwner && githubRepo) {
       try {
         let prs = [];
 
@@ -130,7 +172,7 @@ export async function handleFolderStatus(req, res, query) {
         // Fallback: Try searching by branch name if no PRs found from Linear
         if (prs.length === 0) {
           console.log(`🔍 Searching for PRs with head: ${githubOwner}:${branchName}`);
-          prs = await getPullRequestsForBranch(branchName);
+          prs = await getPullRequestsForBranch(branchName, 'all', { owner: githubOwner, repo: githubRepo, token: githubToken });
           console.log(`📊 Found ${prs.length} PRs for ${branchName}:`, prs.map(pr => `#${pr.number} (${pr.state}${pr.merged_at ? ', merged' : ''}, head: ${pr.head.ref})`).join(', '));
         }
 

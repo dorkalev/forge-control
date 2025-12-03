@@ -1,16 +1,16 @@
-# Electron Desktop App for Local Agent
+# Electron Desktop App for Forge
 
-This wraps the local-agent server in a frameless Electron window.
+This wraps the Forge server in a frameless Electron window.
 
 ## Usage
 
 ```bash
-# Start both the local-agent server and Electron app
+# Start both the Forge server and Electron app
 npm run app
 ```
 
 This will:
-1. Start the local-agent server on port 4665
+1. Start the Forge server on port 4665
 2. Wait for it to be ready
 3. Open an Electron window pointing to http://localhost:4665
 
@@ -26,7 +26,7 @@ This will:
 
 ```bash
 # Run just the server
-npm run local-agent
+   npm run forge:server
 
 # Run just the Electron window (server must already be running)
 npm run dev:electron

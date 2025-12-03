@@ -1,5 +1,50 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
 // Root page view with complete original UI design
-export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, localDevUrl = 'http://localhost:8001', dashboardUrls = {}) {
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function loadRocketIconDataUrl() {
+  const candidates = [];
+  if (process.env.FORGE_ICON_PATH) candidates.push(process.env.FORGE_ICON_PATH);
+  candidates.push(path.resolve(process.cwd(), 'electron', 'icon.png'));
+  candidates.push(path.resolve(__dirname, '..', '..', 'electron', 'icon.png'));
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const base64 = fs.readFileSync(candidate).toString('base64');
+        return `data:image/png;base64,${base64}`;
+      }
+    } catch (err) {
+      console.warn(`⚠️ Could not load rocket icon from ${candidate}: ${err.message}`);
+    }
+  }
+
+  return '';
+}
+
+const rocketIconDataUrl = loadRocketIconDataUrl();
+
+export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, localDevUrl = 'http://localhost:8001', dashboardUrls = {}, projects = [], activeProject = null, toolStatus = {}) {
+  const { meldInstalled = true, tmuxInstalled = true, claudeInstalled = true } = toolStatus;
+
+  // Generate project selector options
+  const projectOptions = projects.map(p => `
+    <div class="project-option ${p.isActive ? 'active' : ''}" onclick="switchProject('${p.key}')">
+      <span class="check">${p.isActive ? '✓' : ''}</span>
+      <div class="info">
+        <div class="name">${p.name}</div>
+        <div class="path">${p.folderName}</div>
+      </div>
+    </div>
+  `).join('');
+
+  const activeProjectName = activeProject?.name || activeProject?.key || 'No Project';
+
   const worktreeRows = worktrees.map(wt => {
     const ageClass = wt.ageInDays > 21 ? 'age-old' : wt.ageInDays > 14 ? 'age-warning' : 'age-fresh';
     const ageText = wt.ageInDays === 0 ? 'Today' : wt.ageInDays === 1 ? '1 day' : `${wt.ageInDays} days`;
@@ -9,15 +54,13 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     const folderName = wt.path.split('/').pop();
     
     return `
-    <tr data-branch="${branchId}" data-folder="${folderName}">
+    <tr data-branch="${branchId}" data-folder="${folderName}" data-path="${wt.path}">
       <td class="info-cell">
         <div class="info-header">
           <span class="title">${wt.title}</span>
           <a href="#" class="ticket-btn" id="ticket-btn-${branchId}">${ticketId}</a>
         </div>
-        <div class="description">${wt.description}
-          <button onclick="copyToClipboard('${wt.description.replace(/'/g, "\\'")}', this)" class="copy-btn" title="Copy description">📋</button>
-        </div>
+        <div class="description">${wt.description}</div>
         <div class="branch-path">${wt.path}</div>
       </td>
       <td class="status-cell" id="status-${branchId}">
@@ -29,7 +72,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         <button onclick="openTerminal('${wt.path}')" class="action-btn btn-warp" title="Open in Warp">⌘ Warp</button>
         <button onclick="openClaude('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-claude" title="Open Claude">🤖 Claude</button>
         <button onclick="openInFinder('${wt.path}')" class="action-btn btn-finder" title="Open in Finder">📁 Finder</button>
-        <button onclick="openGitKraken('${wt.path}')" class="action-btn btn-gitkraken" title="Open in GitKraken">🦑 GitKraken</button>
+        <button onclick="openMeld('${wt.path}')" class="action-btn btn-meld" title="Open in Meld">📊 Meld</button>
         <button onclick="cleanupBranch('${wt.path}', '${wt.branch}', '${ticketId}')" class="action-btn btn-cleanup" style="display: none;" title="Delete branch and worktree">🗑 Cleanup!</button>
         <button onclick="hideWorktree('${wt.path}', '${wt.branch}')" class="action-btn btn-hide" title="Hide worktree">👁 Hide</button>
       </td>
@@ -40,13 +83,13 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     const prId = pr.branch.replace(/[^a-zA-Z0-9]/g, '-');
     return `
     <tr>
-      <td colspan="3" style="padding: 12px; color: #1f2937;">
+      <td colspan="3" style="padding: 12px; color: var(--text);">
         <div style="display: flex; align-items: center; gap: 12px;">
           <div style="flex: 1;">
-            <a href="${pr.url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">
+            <a href="${pr.url}" target="_blank" style="color: var(--accent-2); text-decoration: none; font-weight: 700;">
               ${pr.title}
             </a>
-            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+            <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
               <strong>${pr.branch}</strong> (#${pr.number} by ${pr.author})
             </div>
           </div>
@@ -69,14 +112,14 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
 
     return `
     <tr data-issue-id="${issueId}">
-      <td colspan="3" style="padding: 12px; color: #1f2937;">
+      <td colspan="3" style="padding: 12px; color: var(--text);">
         <div style="display: flex; align-items: center; gap: 12px;">
           <span>${priorityEmoji}</span>
           <div style="flex: 1;">
-            <a href="${issue.url}" target="_blank" style="color: #3b82f6; text-decoration: none; font-weight: 600;">
+            <a href="${issue.url}" target="_blank" style="color: var(--accent-2); text-decoration: none; font-weight: 700;">
               ${issue.identifier}: ${issue.title}
             </a>
-            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+            <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
               <strong id="branch-name-${issueId}">Checking...</strong> · ${issue.state}
             </div>
           </div>
@@ -99,7 +142,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
 
   const sessionRows = tmuxSessions.map(s => `
     <tr>
-      <td style="padding: 12px; color: #1f2937;">${s.displayTitle}</td>
+      <td style="padding: 12px; color: var(--text);">${s.displayTitle}</td>
       <td class="actions-cell">
         <button onclick="attachTmux('${s.name}')" class="action-btn btn-attach">📎 Attach</button>
         <button onclick="killTmux('${s.name}')" class="action-btn btn-danger">❌ Kill</button>
@@ -112,32 +155,69 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>🚀 Local Agent - Worktrees</title>
+  <title>Forge Control Deck</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root {
+      --bg: #080d1a;
+      --panel: rgba(255, 255, 255, 0.04);
+      --panel-strong: rgba(255, 255, 255, 0.07);
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --muted-strong: #cbd5e1;
+      --accent: #f97316;
+      --accent-2: #22d3ee;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #f43f5e;
+    }
+    * { box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0; padding: 0;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(249, 115, 22, 0.18) 0, transparent 30%),
+        radial-gradient(circle at 80% 10%, rgba(34, 211, 238, 0.18) 0, transparent 28%),
+        linear-gradient(135deg, #0a0f1f 0%, #070b16 100%);
+      color: var(--text);
       min-height: 100vh;
     }
     .titlebar {
       -webkit-app-region: drag;
       user-select: none;
       height: 40px;
-      background: rgba(0, 0, 0, 0.2);
+      background: linear-gradient(90deg, rgba(249, 115, 22, 0.14), rgba(34, 211, 238, 0.12));
       backdrop-filter: blur(10px);
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       z-index: 1000;
+      border-bottom: 1px solid var(--border);
+    }
+    .logo-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .logo-img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      box-shadow: none;
+      border: none;
+      margin-top: 2px;
+      object-fit: cover;
+    }
+    .logo-fallback {
+      font-size: 32px;
     }
     .container {
       max-width: 1400px;
       margin: 0 auto;
-      padding: 20px;
-      padding-top: 60px;
+      padding: 24px;
+      padding-top: 72px;
     }
     .app-drag-region {
       -webkit-app-region: drag;
@@ -147,57 +227,148 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       -webkit-app-region: no-drag;
     }
     .header {
-      background: rgba(255, 255, 255, 0.15);
-      padding: 24px 32px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+      padding: 24px 28px;
       border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(31, 38, 135, 0.4);
-      border: 1px solid rgba(255, 255, 255, 0.25);
+      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.45);
+      border: 1px solid var(--border);
       backdrop-filter: blur(10px);
-      margin-bottom: 24px;
+      margin-bottom: 26px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      position: relative;
+      z-index: 100;
     }
-    h1 { margin: 0; color: white; font-size: 28px; }
-    .subtitle { color: rgba(255, 255, 255, 0.85); margin-top: 6px; font-size: 15px; }
-    .header-actions {
-      display: flex;
-      gap: 12px;
+    h1 { margin: 0; color: var(--text); font-size: 26px; letter-spacing: -0.02em; line-height: 1.1; }
+    .subtitle { color: var(--muted); margin-top: 4px; font-size: 13px; }
+    .project-selector {
+      position: relative;
+      display: inline-block;
     }
-    .header-btn {
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
+    .project-selector-btn {
+      background: var(--panel-strong);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
       transition: all 0.2s;
     }
+    .project-selector-btn:hover {
+      border-color: rgba(249, 115, 22, 0.6);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    .project-selector-btn .project-name {
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .project-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 6px;
+      background: #0b1121;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      min-width: 280px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+      z-index: 9999;
+      overflow: hidden;
+    }
+    .project-dropdown.open {
+      display: block;
+    }
+    .project-option {
+      padding: 12px 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.15s;
+      border-bottom: 1px solid var(--border);
+    }
+    .project-option:last-child {
+      border-bottom: none;
+    }
+    .project-option:hover {
+      background: var(--panel-strong);
+    }
+    .project-option.active {
+      background: rgba(34, 211, 238, 0.12);
+    }
+    .project-option .check {
+      width: 20px;
+      color: var(--accent-2);
+      font-weight: bold;
+    }
+    .project-option .info {
+      flex: 1;
+    }
+    .project-option .name {
+      font-weight: 600;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .project-option .path {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: 'Monaco', 'Menlo', monospace;
+      margin-top: 2px;
+    }
+    .header-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .header-btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.01em;
+    }
     .header-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
+      border-color: rgba(249, 115, 22, 0.6);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      transform: translateY(-1px);
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      background: rgba(255, 255, 255, 0.95);
+      background: var(--panel);
       border-radius: 12px;
       overflow: hidden;
-      box-shadow: 0 8px 32px rgba(31, 38, 135, 0.3);
+      box-shadow: 0 14px 50px rgba(0,0,0,0.35);
+      border: 1px solid var(--border);
     }
     th, td {
       padding: 14px;
       text-align: left;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
     }
     th {
-      background: #f9fafb;
-      font-weight: 600;
-      font-size: 13px;
-      color: #374151;
+      background: var(--panel-strong);
+      font-weight: 700;
+      font-size: 12px;
+      color: var(--muted-strong);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.08em;
     }
     .info-cell {
       width: 48%;
@@ -209,44 +380,51 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       margin-bottom: 6px;
     }
     .title {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 15px;
-      color: #111827;
+      color: var(--text);
     }
     .ticket-btn {
-      background: #3b82f6;
-      color: white;
+      background: var(--accent);
+      color: #0b0f1a;
       padding: 4px 10px;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 12px;
       text-decoration: none;
-      font-weight: 600;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      border: 1px solid rgba(0,0,0,0.12);
+      box-shadow: 0 10px 30px rgba(249, 115, 22, 0.25);
     }
     .ticket-btn:hover {
-      background: #2563eb;
+      background: #fb923c;
     }
     .description {
-      color: #6b7280;
+      color: var(--muted);
       font-size: 14px;
       line-height: 1.5;
     }
     .branch-path {
       font-size: 11px;
-      color: #9ca3af;
+      color: var(--muted-strong);
       margin-top: 4px;
       font-family: 'Monaco', 'Menlo', monospace;
+      letter-spacing: 0.03em;
     }
     .copy-btn {
       background: transparent;
-      border: none;
+      border: 1px solid var(--border);
       cursor: pointer;
-      font-size: 16px;
-      padding: 2px;
-      opacity: 0.5;
-      transition: opacity 0.2s;
+      font-size: 14px;
+      padding: 4px 6px;
+      border-radius: 6px;
+      color: var(--muted);
+      margin-left: 8px;
+      transition: all 0.2s;
     }
     .copy-btn:hover {
-      opacity: 1;
+      color: var(--text);
+      border-color: rgba(249, 115, 22, 0.7);
     }
     .status-cell {
       width: 20%;
@@ -254,29 +432,34 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     }
     .status-badge {
       display: inline-block;
-      padding: 4px 10px;
-      border-radius: 6px;
+      padding: 5px 11px;
+      border-radius: 8px;
       font-size: 11px;
-      font-weight: 600;
+      font-weight: 700;
       margin: 2px 4px 2px 0;
+      border: 1px solid var(--border);
+      letter-spacing: 0.02em;
     }
-    .status-loading { background: #e5e7eb; color: #6b7280; }
-    .status-linear-done { background: #3b82f6; color: white; }
-    .status-linear-progress { background: #10b981; color: white; }
-    .status-linear-backlog { background: #f3f4f6; color: #4b5563; border: 1px solid #d1d5db; }
-    .status-linear-default { background: #6366f1; color: white; }
-    .status-github-open { background: #059669; color: white; }
-    .status-github-merged { background: #6366f1; color: white; }
-    .status-github-draft { background: #6b7280; color: white; }
-    .status-wip { background: #fbbf24; color: #78350f; font-weight: 700; }
-    .status-render-building { background: #fbbf24; color: #78350f; }
-    .status-render-failed { background: #ef4444; color: white; }
-    .status-render-suspended { background: #6b7280; color: white; }
-    .render-service { padding: 8px 12px; border-bottom: 1px solid #e5e7eb; }
+    .status-loading { background: rgba(255,255,255,0.06); color: var(--muted); }
+    .status-linear-done { background: rgba(34,197,94,0.18); color: #bbf7d0; border-color: rgba(34,197,94,0.35); }
+    .status-linear-progress { background: rgba(56,189,248,0.18); color: #bae6fd; border-color: rgba(56,189,248,0.4); }
+    .status-linear-backlog { background: rgba(255,255,255,0.06); color: var(--muted-strong); }
+    .status-linear-default { background: rgba(249,115,22,0.18); color: #ffd7b3; border-color: rgba(249,115,22,0.35); }
+    .status-github-open { background: rgba(34,197,94,0.18); color: #bbf7d0; border-color: rgba(34,197,94,0.35); }
+    .status-github-merged { background: rgba(34,211,238,0.18); color: #cffafe; border-color: rgba(34,211,238,0.35); }
+    .status-github-draft { background: rgba(148,163,184,0.18); color: #e2e8f0; border-color: rgba(148,163,184,0.35); }
+    .status-wip { background: rgba(249,115,22,0.2); color: #fed7aa; font-weight: 800; border-color: rgba(249,115,22,0.5); }
+    .status-sync { background: rgba(34,211,238,0.2); color: #cffafe; border-color: rgba(34,211,238,0.5); cursor: pointer; }
+    .status-sync:hover { background: rgba(34,211,238,0.35); }
+    .status-conflict { background: rgba(244,63,94,0.2); color: #fecdd3; border-color: rgba(244,63,94,0.5); }
+    .status-render-building { background: rgba(245,158,11,0.15); color: #fde68a; }
+    .status-render-failed { background: rgba(244,63,94,0.2); color: #fecdd3; border-color: rgba(244,63,94,0.4); }
+    .status-render-suspended { background: rgba(148,163,184,0.18); color: #e2e8f0; }
+    .render-service { padding: 8px 12px; border-bottom: 1px solid var(--border); }
     .render-service:last-child { border-bottom: none; }
-    .render-service-name { font-weight: 600; color: #111827; font-size: 14px; }
-    .render-service-name a:hover { text-decoration: underline; color: #667eea; }
-    .render-service-meta { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    .render-service-name { font-weight: 600; color: var(--text); font-size: 14px; }
+    .render-service-name a:hover { text-decoration: underline; color: var(--accent-2); }
+    .render-service-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
     .age-cell {
       width: 10%;
     }
@@ -285,129 +468,100 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       padding: 4px 12px;
       border-radius: 12px;
       font-size: 13px;
-      font-weight: 500;
+      font-weight: 600;
+      border: 1px solid var(--border);
     }
-    .age-fresh { background: #d1fae5; color: #065f46; }
-    .age-warning { background: #fef3c7; color: #92400e; }
-    .age-old { background: #fee2e2; color: #991b1b; }
+    .age-fresh { background: rgba(34,197,94,0.16); color: #bbf7d0; border-color: rgba(34,197,94,0.3); }
+    .age-warning { background: rgba(245,158,11,0.16); color: #fde68a; border-color: rgba(245,158,11,0.3); }
+    .age-old { background: rgba(244,63,94,0.16); color: #fecdd3; border-color: rgba(244,63,94,0.3); }
     .actions-cell {
       white-space: normal;
       width: 237px;
       max-width: 237px;
     }
     .action-btn {
-      background: #f3f4f6;
-      border: 2px solid #d1d5db;
-      padding: 8px 8px;
-      border-radius: 6px;
+      background: var(--panel-strong);
+      border: 1px solid var(--border);
+      padding: 9px 8px;
+      border-radius: 8px;
       font-size: 11px;
       cursor: pointer;
       margin: 3px;
-      color: #374151;
-      font-weight: 500;
+      color: var(--text);
+      font-weight: 600;
       transition: all 0.2s;
       display: inline-block;
       width: 108px;
       text-align: center;
+      letter-spacing: 0.02em;
     }
     .action-btn:hover {
-      background: #e5e7eb;
-      border-color: #9ca3af;
+      border-color: rgba(249,115,22,0.5);
+      transform: translateY(-1px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
     }
     .btn-run {
-      background: #3b82f6;
-      color: white;
-      border: 2px solid #2563eb;
+      background: linear-gradient(135deg, #f97316, #fb923c);
+      color: #0b0f1a;
+      border: 1px solid #ffedd5;
     }
     .btn-run:hover {
-      background: #2563eb;
-      border-color: #1d4ed8;
+      border-color: #fecdd3;
     }
     .btn-claude {
-      background: #7c3aed;
-      color: white;
-      border: 2px solid #6d28d9;
-    }
-    .btn-claude:hover {
-      background: #6d28d9;
-      border-color: #5b21b6;
+      background: linear-gradient(135deg, #22d3ee, #38bdf8);
+      color: #04131f;
+      border: 1px solid rgba(56,189,248,0.35);
     }
     .btn-warp {
-      background: #10b981;
-      color: white;
-      border: 2px solid #059669;
-    }
-    .btn-warp:hover {
-      background: #059669;
-      border-color: #047857;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: #04120c;
+      border: 1px solid rgba(34,197,94,0.4);
     }
     .btn-finder {
-      background: #f59e0b;
-      color: white;
-      border: 2px solid #d97706;
+      background: linear-gradient(135deg, #f59e0b, #fbbf24);
+      color: #0f0a02;
+      border: 1px solid rgba(245,158,11,0.4);
     }
-    .btn-finder:hover {
-      background: #d97706;
-      border-color: #b45309;
-    }
-    .btn-gitkraken {
-      background: #06b6d4;
-      color: white;
-      border: 2px solid #0891b2;
-    }
-    .btn-gitkraken:hover {
-      background: #0891b2;
-      border-color: #0e7490;
+    .btn-meld {
+      background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+      color: #0f0a1f;
+      border: 1px solid rgba(139,92,246,0.4);
     }
     .btn-hide {
-      background: #6b7280;
-      color: white;
-      border: 2px solid #4b5563;
-    }
-    .btn-hide:hover {
-      background: #4b5563;
-      border-color: #374151;
+      background: linear-gradient(135deg, #475569, #334155);
+      color: #e2e8f0;
+      border: 1px solid rgba(148,163,184,0.4);
     }
     .btn-cleanup {
-      background: #ef4444;
-      color: white;
-      border: 2px solid #dc2626;
-    }
-    .btn-cleanup:hover {
-      background: #dc2626;
-      border-color: #b91c1c;
+      background: linear-gradient(135deg, #f43f5e, #fb7185);
+      color: #0f0610;
+      border: 1px solid rgba(244,63,94,0.45);
     }
     .btn-danger {
-      background: #ef4444;
-      color: white;
-      border: 2px solid #dc2626;
-    }
-    .btn-danger:hover {
-      background: #dc2626;
-      border-color: #b91c1c;
+      background: linear-gradient(135deg, #f43f5e, #fb7185);
+      color: #0f0610;
+      border: 1px solid rgba(244,63,94,0.45);
     }
     .btn-attach {
-      background: #8b5cf6;
-      color: white;
-      border: 2px solid #7c3aed;
-    }
-    .btn-attach:hover {
-      background: #7c3aed;
-      border-color: #6d28d9;
+      background: linear-gradient(135deg, #22d3ee, #38bdf8);
+      color: #04131f;
+      border: 1px solid rgba(34,211,238,0.45);
     }
     .section {
-      margin-bottom: 24px;
+      margin-bottom: 26px;
     }
     .section-header {
-      background: rgba(255, 255, 255, 0.15);
+      background: linear-gradient(90deg, rgba(249,115,22,0.12), rgba(34,211,238,0.12));
       padding: 16px 24px;
       border-radius: 12px 12px 0 0;
-      font-size: 18px;
-      font-weight: 600;
-      color: white;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
       backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.25);
+      border: 1px solid var(--border);
       border-bottom: none;
+      letter-spacing: 0.01em;
     }
     .section table {
       border-radius: 0 0 12px 12px;
@@ -420,23 +574,24 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       top: 0;
       width: 100%;
       height: 100%;
-      background-color: rgba(0,0,0,0.5);
-      backdrop-filter: blur(4px);
+      background-color: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
     }
     .modal-content {
-      background: white;
+      background: #0b1121;
       margin: 5% auto;
       padding: 0;
-      border-radius: 12px;
+      border-radius: 14px;
       width: 80%;
       max-width: 900px;
       max-height: 80vh;
       overflow: hidden;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+      border: 1px solid var(--border);
     }
     .modal-header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
+      background: linear-gradient(135deg, #f97316, #22d3ee);
+      color: #0b0f1a;
       padding: 20px 30px;
       display: flex;
       justify-content: space-between;
@@ -444,18 +599,19 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     }
     .modal-header h2 {
       margin: 0;
-      font-size: 24px;
+      font-size: 22px;
+      letter-spacing: -0.01em;
     }
     .modal-close {
-      color: white;
+      color: #0b0f1a;
       font-size: 28px;
       font-weight: bold;
       cursor: pointer;
-      background: none;
+      background: rgba(255,255,255,0.4);
       border: none;
-      padding: 0;
-      width: 30px;
-      height: 30px;
+      padding: 4px;
+      width: 32px;
+      height: 32px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -463,48 +619,51 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       transition: background 0.2s;
     }
     .modal-close:hover {
-      background: rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.65);
     }
     .modal-body {
-      padding: 30px;
+      padding: 28px;
       max-height: calc(80vh - 80px);
       overflow-y: auto;
+      color: var(--text);
     }
     .issue-card {
-      background: #f8f9fa;
-      border: 2px solid #e5e7eb;
-      border-radius: 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
       padding: 16px;
       margin-bottom: 12px;
       transition: all 0.2s;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
     }
     .issue-card:hover {
-      border-color: #667eea;
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+      border-color: rgba(249,115,22,0.5);
+      transform: translateY(-1px);
     }
     .issue-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
       margin-bottom: 8px;
+      gap: 12px;
     }
     .issue-title {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 15px;
-      color: #111827;
+      color: var(--text);
       flex: 1;
     }
     .issue-id {
-      background: #3b82f6;
-      color: white;
+      background: var(--accent-2);
+      color: #04131f;
       padding: 4px 10px;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 12px;
-      font-weight: 600;
-      margin-left: 12px;
+      font-weight: 700;
+      box-shadow: 0 10px 25px rgba(34, 211, 238, 0.35);
     }
     .issue-description {
-      color: #6b7280;
+      color: var(--muted);
       font-size: 13px;
       margin-bottom: 12px;
       line-height: 1.5;
@@ -520,36 +679,82 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       font-size: 12px;
     }
     .issue-cycle {
-      background: #e0e7ff;
-      color: #3730a3;
+      background: rgba(249,115,22,0.14);
+      color: #ffedd5;
       padding: 4px 8px;
-      border-radius: 4px;
+      border-radius: 6px;
     }
     .issue-state {
-      background: #dbeafe;
-      color: #1e40af;
+      background: rgba(34,211,238,0.14);
+      color: #cffafe;
       padding: 4px 8px;
-      border-radius: 4px;
+      border-radius: 6px;
     }
     .assign-btn {
-      background: #10b981;
-      color: white;
-      border: 2px solid #059669;
-      padding: 6px 16px;
-      border-radius: 6px;
+      background: linear-gradient(135deg, #f97316, #fb923c);
+      color: #0b0f1a;
+      border: 1px solid rgba(249,115,22,0.45);
+      padding: 8px 16px;
+      border-radius: 8px;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
       transition: all 0.2s;
+      letter-spacing: 0.02em;
     }
     .assign-btn:hover {
-      background: #059669;
-      border-color: #047857;
+      box-shadow: 0 10px 30px rgba(249,115,22,0.35);
+      transform: translateY(-1px);
     }
     .assign-btn:disabled {
-      background: #9ca3af;
-      border-color: #6b7280;
+      background: rgba(148,163,184,0.3);
+      border-color: rgba(148,163,184,0.4);
+      color: #cbd5e1;
       cursor: not-allowed;
+    }
+    .warning-banner {
+      background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(249, 115, 22, 0.15));
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      border-radius: 12px;
+      padding: 14px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .warning-banner-content {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      color: #fde68a;
+      font-size: 14px;
+    }
+    .warning-banner-content .warning-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .warning-banner-content code {
+      background: rgba(0,0,0,0.3);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 13px;
+      color: #fef3c7;
+    }
+    .warning-banner-close {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fde68a;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 4px 10px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+    .warning-banner-close:hover {
+      background: rgba(255,255,255,0.2);
     }
   </style>
 </head>
@@ -557,15 +762,29 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
   <div class="titlebar"></div>
   <div class="container">
     <div class="header">
-      <div>
-        <h1>🚀 SDLC RocketShip</h1>
-        <div class="subtitle">Manage your development environments</div>
+      <div class="logo-row">
+        ${rocketIconDataUrl ? `<img src="${rocketIconDataUrl}" alt="Forge logo" class="logo-img" />` : `<span class="logo-fallback">🚀</span>`}
+        <div>
+          <h1>Forge Control Deck</h1>
+          <div class="subtitle">Branch faster, launch environments, and keep delivery humming.</div>
+        </div>
+        ${projects.length > 0 ? `
+        <div class="project-selector" style="margin-left: 20px;">
+          <button class="project-selector-btn" onclick="toggleProjectDropdown(event)">
+            <span>📁</span>
+            <span class="project-name">${activeProjectName}</span>
+            <span>▼</span>
+          </button>
+          <div class="project-dropdown" id="projectDropdown">
+            ${projectOptions}
+          </div>
+        </div>
+        ` : ''}
       </div>
       <div class="header-actions">
         <button onclick="openInspector()" class="header-btn">🔍 Inspector</button>
         <button onclick="openLocalhost()" class="header-btn">🌐 Localhost</button>
-        <button onclick="window.open('https://linear.app', '_blank')" class="header-btn">📋 Linear</button>
-        <button onclick="window.open('https://dashboard.render.com/', '_blank')" class="header-btn">☁️ Render</button>
+        <button onclick="openLinearProject()" class="header-btn">📋 Linear</button>
         ${dashboardUrls.datadog ? `<button onclick="window.open('${dashboardUrls.datadog}', '_blank')" class="header-btn">📊 DataDog</button>` : ''}
         ${dashboardUrls.sentry ? `<button onclick="window.open('${dashboardUrls.sentry}', '_blank')" class="header-btn">🐛 Sentry</button>` : ''}
         <button onclick="showUnassignedIssues()" class="header-btn">📌 Unassigned</button>
@@ -577,6 +796,20 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       </div>
     </div>
 
+    ${(!meldInstalled || !tmuxInstalled || !claudeInstalled) ? `
+    <div class="warning-banner" id="toolWarnings">
+      <div class="warning-banner-content">
+        <span>⚠️</span>
+        <div class="warning-list">
+          ${!claudeInstalled ? '<div>Claude Code CLI not found. Install from: <a href="https://claude.ai/download" target="_blank" style="color: #fef3c7;">claude.ai/download</a></div>' : ''}
+          ${!tmuxInstalled ? '<div>tmux not found. <code>brew install tmux</code></div>' : ''}
+          ${!meldInstalled ? '<div>Meld not found. <code>brew install meld</code></div>' : ''}
+        </div>
+      </div>
+      <button class="warning-banner-close" onclick="dismissToolWarnings()">×</button>
+    </div>
+    ` : ''}
+
     <div class="section">
       <div class="section-header">📁 Active Worktrees (${worktrees.length})</div>
       <table>
@@ -586,7 +819,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           <th>Age</th>
           <th>Actions</th>
         </tr></thead>
-        <tbody>${worktreeRows || '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #6b7280;">No worktrees found</td></tr>'}</tbody>
+        <tbody>${worktreeRows || '<tr><td colspan="4" style="text-align: center; padding: 40px; color: var(--muted);">No worktrees found</td></tr>'}</tbody>
       </table>
     </div>
 
@@ -640,7 +873,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         <button class="modal-close" onclick="closeUnassignedModal()">&times;</button>
       </div>
       <div class="modal-body" id="modalBody">
-        <p style="text-align: center; color: #6b7280;">Loading...</p>
+        <p style="text-align: center; color: var(--muted);">Loading...</p>
       </div>
     </div>
   </div>
@@ -654,7 +887,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       </div>
       <div class="modal-body">
         <div style="margin-bottom: 20px;">
-          <label style="display: block; font-weight: 600; margin-bottom: 8px; color: #111827;">
+          <label style="display: block; font-weight: 700; margin-bottom: 8px; color: var(--text);">
             Max Parallel Agents
           </label>
           <input
@@ -663,15 +896,15 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
             min="1"
             max="10"
             value="3"
-            style="padding: 8px; border: 2px solid #e5e7eb; border-radius: 6px; width: 100px; font-size: 16px;"
+            style="padding: 10px; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 10px; width: 120px; font-size: 16px;"
           />
         </div>
 
         <div style="margin-bottom: 20px;">
-          <div style="font-size: 14px; color: #6b7280;">
+          <div style="font-size: 14px; color: var(--muted);">
             <strong>Status:</strong> <span id="autopilotStatusText">Loading...</span>
           </div>
-          <div style="font-size: 14px; color: #6b7280; margin-top: 4px;">
+          <div style="font-size: 14px; color: var(--muted); margin-top: 4px;">
             <strong>Running Agents:</strong> <span id="runningAgentsText">0</span>
           </div>
         </div>
@@ -680,7 +913,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           <button onclick="toggleAutopilot()" id="toggleBtn" class="assign-btn">
             Start Autopilot
           </button>
-          <button onclick="saveMaxParallel()" class="assign-btn" style="background: #3b82f6; border-color: #2563eb;">
+          <button onclick="saveMaxParallel()" class="assign-btn" style="background: linear-gradient(135deg, #22d3ee, #38bdf8); border-color: rgba(34,211,238,0.45);">
             Save Settings
           </button>
         </div>
@@ -698,24 +931,24 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       <div class="modal-body">
         <div style="margin-bottom: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <div id="issuesDiffInfo" style="font-size: 14px; color: #6b7280;"></div>
-            <button onclick="copyIssuesDiff(event)" class="assign-btn" style="background: #10b981; border-color: #059669;">
+            <div id="issuesDiffInfo" style="font-size: 14px; color: var(--muted);"></div>
+            <button onclick="copyIssuesDiff(event)" class="assign-btn" style="background: linear-gradient(135deg, #22c55e, #16a34a); border-color: rgba(34,197,94,0.4);">
               📋 Copy to Clipboard
             </button>
           </div>
           <div style="display: flex; gap: 8px;">
-            <button onclick="generateChangelog('condensed')" class="assign-btn" style="background: #3b82f6; border-color: #2563eb; flex: 1;">
+            <button onclick="generateChangelog('condensed')" class="assign-btn" style="background: linear-gradient(135deg, #f97316, #fb923c); border-color: rgba(249,115,22,0.45); flex: 1;">
               ⚡ Generate Condensed Changelog
             </button>
-            <button onclick="generateChangelog('detailed')" class="assign-btn" style="background: #6366f1; border-color: #4f46e5; flex: 1;">
+            <button onclick="generateChangelog('detailed')" class="assign-btn" style="background: linear-gradient(135deg, #22d3ee, #38bdf8); border-color: rgba(34,211,238,0.45); flex: 1;">
               📄 Generate Detailed Changelog
             </button>
           </div>
         </div>
         <div id="issuesDiffContent" style="
-          background: #f8f9fa;
-          border: 1px solid #e5e7eb;
-          border-radius: 8px;
+          background: var(--panel);
+          border: 1px solid var(--border);
+          border-radius: 10px;
           padding: 20px;
           max-height: 500px;
           overflow-y: auto;
@@ -723,7 +956,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           font-size: 13px;
           line-height: 1.6;
           white-space: pre-wrap;
-          color: #1f2937;
+          color: var(--text);
         ">
           Loading...
         </div>
@@ -732,16 +965,72 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
   </div>
 
   <script>
+    // Dismiss tool warnings banner
+    function dismissToolWarnings() {
+      const banner = document.getElementById('toolWarnings');
+      if (banner) {
+        banner.style.display = 'none';
+        localStorage.setItem('toolWarningsDismissed', 'true');
+      }
+    }
+
+    // Check if warning was previously dismissed
+    if (localStorage.getItem('toolWarningsDismissed') === 'true') {
+      const banner = document.getElementById('toolWarnings');
+      if (banner) banner.style.display = 'none';
+    }
+
+    // Project selector functions
+    function toggleProjectDropdown(event) {
+      event.stopPropagation();
+      const dropdown = document.getElementById('projectDropdown');
+      dropdown.classList.toggle('open');
+    }
+
+    async function switchProject(projectName) {
+      const dropdown = document.getElementById('projectDropdown');
+      dropdown.classList.remove('open');
+
+      try {
+        const res = await fetch('/api/projects/active', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: projectName })
+        });
+
+        if (res.ok) {
+          window.location.reload();
+        } else {
+          const data = await res.json();
+          alert('Failed to switch project: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Error switching project: ' + err.message);
+      }
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(event) {
+      const dropdown = document.getElementById('projectDropdown');
+      const selector = event.target.closest('.project-selector');
+      if (!selector && dropdown) {
+        dropdown.classList.remove('open');
+      }
+    });
+
     async function fetchStatus() {
       const rows = document.querySelectorAll('[data-branch]');
       for (const row of rows) {
         const branchId = row.getAttribute('data-branch');
         const folder = row.getAttribute('data-folder');
+        const worktreePath = row.getAttribute('data-path');
         const statusCell = document.getElementById(\`status-\${branchId}\`);
         const ticketBtn = document.getElementById(\`ticket-btn-\${branchId}\`);
-        
+
+        if (!statusCell || !folder) continue;
+
         try {
-          const res = await fetch(\`/api/folder-status?folder=\${encodeURIComponent(folder)}\`);
+          const res = await fetch(\`/api/folder-status?folder=\${encodeURIComponent(folder)}&path=\${encodeURIComponent(worktreePath || '')}\`);
           const data = await res.json();
           
           let html = '';
@@ -749,6 +1038,16 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           // Add WIP badge if there are uncommitted or unpushed changes
           if (data.git && data.git.hasChanges) {
             html += '<span class="status-badge status-wip">WIP</span>';
+          }
+
+          // Add issue sync badge if Linear has updates
+          if (data.issueSync) {
+            if (data.issueSync.hasConflict) {
+              html += '<span class="status-badge status-conflict" title="Local issue file has uncommitted changes but Linear has updates">⚠️ Issue Conflict</span>';
+            } else if (data.issueSync.hasUpdate) {
+              const linearId = (folder.match(/([A-Za-z]+-\\d+)/i)?.[0] || '').toUpperCase();
+              html += \`<span class="status-badge status-sync" onclick="updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Linear description has changed - click to update local file">🔄 Update from Linear</span>\`;
+            }
           }
 
           if (data.linear && !data.linear.error) {
@@ -818,11 +1117,22 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     }
 
     async function openClaude(path, branch, title, ticketId) {
-      await fetch('/open-claude', {
+      const res = await fetch('/open-claude', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({path, branch, title, ticketId})
       });
+      const data = await res.json();
+      if (!data.ok) {
+        const error = data.error || 'Unknown error';
+        if (error.includes('tmux not installed')) {
+          alert('To use Claude button, install tmux:\\n\\nbrew install tmux');
+        } else if (error.includes('claude') || error.includes('Claude')) {
+          alert('To use Claude button, install Claude Code CLI:\\n\\nhttps://claude.ai/download');
+        } else {
+          alert('Failed to open Claude: ' + error);
+        }
+      }
     }
 
     async function openInFinder(path) {
@@ -833,12 +1143,41 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       });
     }
 
-    async function openGitKraken(path) {
-      await fetch('/open-gitkraken', {
+    async function openMeld(path) {
+      const res = await fetch('/open-meld', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({path})
       });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('To use Meld diff tool, install it:\\n\\nbrew install meld');
+      }
+    }
+
+    async function updateIssueFromLinear(worktreePath, issueId) {
+      if (!confirm(\`Update local issue file from Linear?\\n\\nThis will overwrite the local issues/\${issueId}.md file with the latest description from Linear.\`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/update-issue-from-linear', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ worktreePath, issueId })
+        });
+
+        const data = await res.json();
+
+        if (data.ok) {
+          alert(\`✅ Updated \${data.issueFile}\\n\\nTitle: \${data.title}\`);
+          location.reload();
+        } else {
+          throw new Error(data.error || 'Failed to update issue');
+        }
+      } catch (err) {
+        alert('Error updating issue: ' + err.message);
+      }
     }
 
     async function cleanupBranch(path, branch, ticketId) {
@@ -945,56 +1284,87 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       window.open('${localDevUrl}', '_blank');
     }
 
+    // Linear project URL (fetched dynamically)
+    let linearProjectUrl = 'https://linear.app';
+    const activeProjectName = '${activeProject?.linearProject || ''}';
+
+    async function fetchLinearProjectUrl() {
+      if (!activeProjectName) return;
+      try {
+        const res = await fetch(\`/api/linear/project-url?name=\${encodeURIComponent(activeProjectName)}\`);
+        const data = await res.json();
+        if (data.ok && data.url) {
+          linearProjectUrl = data.url;
+        }
+      } catch (err) {
+        console.error('Failed to fetch Linear project URL:', err);
+      }
+    }
+
+    function openLinearProject() {
+      window.open(linearProjectUrl, '_blank');
+    }
+
     function copyToClipboard(text, btn) {
       navigator.clipboard.writeText(text);
       btn.textContent = '✅';
       setTimeout(() => btn.textContent = '📋', 1000);
     }
 
-    async function createWorktree(branch) {
-      const prId = branch.replace(/[^a-zA-Z0-9]/g, '-');
-      let btn = document.getElementById(\`create-\${prId}\`);
+    async function createWorktree(branch, btnElement = null) {
+      let btn = btnElement;
 
-      // If not found, try Linear issue button ID format
       if (!btn) {
-        btn = document.getElementById(\`create-linear-\${prId}\`);
+        const prId = branch.replace(/[^a-zA-Z0-9]/g, '-');
+        btn = document.getElementById(\`create-\${prId}\`);
+
+        // If not found, try Linear issue button ID format
+        if (!btn) {
+          btn = document.getElementById(\`create-linear-\${prId}\`);
+        }
       }
 
-      if (!btn) return;
+      const originalText = btn ? btn.textContent : '';
 
-      btn.disabled = true;
-      btn.textContent = '⏳ Creating...';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Creating...';
+      }
 
       try {
         const res = await fetch(\`/worktree?branch=\${encodeURIComponent(branch)}\`);
         const data = await res.json();
 
         if (data.ok) {
-          btn.textContent = '✅ Created!';
+          if (btn) btn.textContent = '✅ Created!';
           setTimeout(() => location.reload(), 1000);
         } else {
-          btn.textContent = '❌ Failed';
+          if (btn) {
+            btn.textContent = '❌ Failed';
+            btn.disabled = false;
+            setTimeout(() => btn.textContent = originalText || '✨ Worktree', 2000);
+          }
           alert('Failed to create worktree: ' + (data.error || 'Unknown error'));
-          btn.disabled = false;
-          setTimeout(() => btn.textContent = '✨ Worktree', 2000);
         }
       } catch (err) {
-        btn.textContent = '❌ Error';
+        if (btn) {
+          btn.textContent = '❌ Error';
+          btn.disabled = false;
+          setTimeout(() => btn.textContent = originalText || '✨ Worktree', 2000);
+        }
         alert('Error creating worktree: ' + err.message);
-        btn.disabled = false;
-        setTimeout(() => btn.textContent = '✨ Worktree', 2000);
       }
     }
 
     let dorUserId = null;
-    let sdlcBotId = null;
+    let forgeBotId = null;
 
     async function showUnassignedIssues() {
       const modal = document.getElementById('unassignedModal');
       const modalBody = document.getElementById('modalBody');
 
       modal.style.display = 'block';
-      modalBody.innerHTML = '<p style="text-align: center; color: #6b7280;">Loading...</p>';
+      modalBody.innerHTML = '<p style="text-align: center; color: var(--muted);">Loading...</p>';
 
       try {
         // Fetch users and issues in parallel
@@ -1010,18 +1380,18 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           throw new Error(usersData.error || issuesData.error || 'Failed to load data');
         }
 
-        // Find Dor Kalev and SDLC agent
+        // Find Dor Kalev and Forge agent
         const users = usersData.users;
         const dorUser = users.find(u => u.name.includes('Dor Kalev') || u.email.includes('dor'));
-        const sdlcBot = users.find(u => u.name.toLowerCase().includes('sdlc') || u.name.toLowerCase().includes('agent'));
+        const forgeBot = users.find(u => u.name.toLowerCase().includes('forge') || u.name.toLowerCase().includes('agent'));
 
         dorUserId = dorUser?.id;
-        sdlcBotId = sdlcBot?.id;
+        forgeBotId = forgeBot?.id;
 
         const issues = issuesData.issues;
 
         if (issues.length === 0) {
-          modalBody.innerHTML = '<p style="text-align: center; color: #6b7280;">No unassigned issues found in current cycle.</p>';
+          modalBody.innerHTML = '<p style="text-align: center; color: var(--muted);">No unassigned issues found in current cycle.</p>';
           return;
         }
 
@@ -1055,7 +1425,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
 
         modalBody.innerHTML = issuesHtml;
       } catch (err) {
-        modalBody.innerHTML = \`<p style="text-align: center; color: #dc2626;">Error: \${err.message}</p>\`;
+        modalBody.innerHTML = \`<p style="text-align: center; color: #f43f5e;">Error: \${err.message}</p>\`;
       }
     }
 
@@ -1074,10 +1444,10 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       btn.textContent = '⏳ Assigning...';
 
       try {
-        // Build array of assignee IDs - SDLC first (primary assignee), then Dor (subscriber)
+        // Build array of assignee IDs - Forge first (primary assignee), then Dor (subscriber)
         const assigneeIds = [];
-        if (sdlcBotId) {
-          assigneeIds.push(sdlcBotId);
+        if (forgeBotId) {
+          assigneeIds.push(forgeBotId);
         }
         assigneeIds.push(dorUserId);
 
@@ -1094,8 +1464,8 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
 
         if (data.ok) {
           btn.textContent = '✅ Assigned!';
-          btn.style.background = '#6b7280';
-          btn.style.borderColor = '#4b5563';
+          btn.style.background = 'linear-gradient(135deg, #475569, #334155)';
+          btn.style.borderColor = 'rgba(148,163,184,0.5)';
 
           // Remove the card after a delay
           setTimeout(() => {
@@ -1106,7 +1476,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
               // Check if there are any issues left
               const remainingIssues = document.querySelectorAll('.issue-card');
               if (remainingIssues.length === 0) {
-                document.getElementById('modalBody').innerHTML = '<p style="text-align: center; color: #6b7280;">All issues assigned!</p>';
+                document.getElementById('modalBody').innerHTML = '<p style="text-align: center; color: var(--muted);">All issues assigned!</p>';
               }
             }, 300);
           }, 500);
@@ -1157,17 +1527,17 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         if (data.enabled) {
           btn.textContent = \`🤖 Autopilot: ON (\${data.runningAgentsCount}/\${data.maxParallelAgents})\`;
           toggleBtn.textContent = 'Stop Autopilot';
-          toggleBtn.style.background = '#ef4444';
-          toggleBtn.style.borderColor = '#dc2626';
+          toggleBtn.style.background = 'linear-gradient(135deg, #f43f5e, #fb7185)';
+          toggleBtn.style.borderColor = 'rgba(244,63,94,0.45)';
           statusText.textContent = 'Running';
-          statusText.style.color = '#10b981';
+          statusText.style.color = '#22c55e';
         } else {
           btn.textContent = '🤖 Autopilot: OFF';
           toggleBtn.textContent = 'Start Autopilot';
-          toggleBtn.style.background = '#10b981';
-          toggleBtn.style.borderColor = '#059669';
+          toggleBtn.style.background = 'linear-gradient(135deg, #f97316, #fb923c)';
+          toggleBtn.style.borderColor = 'rgba(249,115,22,0.45)';
           statusText.textContent = 'Stopped';
-          statusText.style.color = '#6b7280';
+          statusText.style.color = '#94a3b8';
         }
 
         runningText.textContent = \`\${data.runningAgentsCount}/\${data.maxParallelAgents}\`;
@@ -1330,7 +1700,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
 
         let html = '';
         data.environments.forEach(env => {
-          html += \`<tr><td colspan="4" style="background: #f9fafb; padding: 12px; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb;">\${env.name}\`;
+          html += \`<tr><td colspan="4" style="background: var(--panel-strong); padding: 12px; font-weight: 700; color: var(--text); border-bottom: 1px solid var(--border);">\${env.name}\`;
           if (env.projectName) html += \` - \${env.projectName}\`;
           html += \`</td></tr>\`;
 
@@ -1350,10 +1720,10 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
               <tr>
                 <td colspan="3" style="padding: 12px;">
                   <div class="render-service-name">
-                    <a href="\${service.dashboardUrl}" target="_blank" style="color: #111827; text-decoration: none;">
+                    <a href="\${service.dashboardUrl}" target="_blank" style="color: var(--accent-2); text-decoration: none; font-weight: 700;">
                       \${service.name}
                     </a>
-                    <span style="font-weight: normal; color: #6b7280;">(\${service.type.replace('_', ' ')})</span>
+                    <span style="font-weight: normal; color: var(--muted);">(\${service.type.replace('_', ' ')})</span>
                   </div>
                   <div class="render-service-meta">
                     Branch: <strong>\${service.branch}</strong> | Deployed: <strong>\${deployAgo}</strong>
@@ -1407,6 +1777,14 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         const branch = btn.getAttribute('data-branch');
         const issueDataId = btn.getAttribute('data-issue-id');
         const issueIdentifier = btn.getAttribute('data-issue-identifier');
+
+        if (!branch) {
+          console.error('No branch attribute found for issue:', issueId);
+          btn.textContent = '🌿 Branch!';
+          btn.onclick = () => createBranch(issueDataId, issueIdentifier, btn);
+          btn.style.display = 'inline-block';
+          continue;
+        }
 
         try {
           // Check if branch exists and if it has a PR
@@ -1466,7 +1844,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           setTimeout(() => {
             btn.textContent = '✨ Worktree';
             btn.disabled = false;
-            btn.onclick = () => createWorktree(data.branchName);
+            btn.onclick = () => createWorktree(data.branchName, btn);
           }, 1500);
         } else {
           throw new Error(data.error || 'Failed to create branch');
@@ -1505,7 +1883,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           setTimeout(() => {
             btn.textContent = '✨ Worktree';
             btn.disabled = false;
-            btn.onclick = () => createWorktree(branchName);
+            btn.onclick = () => createWorktree(branchName, btn);
           }, 1500);
         } else {
           throw new Error(data.error || 'Failed to create PR');
@@ -1518,44 +1896,11 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       }
     }
 
-    // Create worktree for a branch
-    async function createWorktree(branchName, btn) {
-      const originalText = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = '⏳ Creating worktree...';
-
-      try {
-        console.log('Creating worktree for branch:', branchName);
-
-        const params = new URLSearchParams({ branch: branchName });
-        const fullUrl = '/worktree?' + params.toString();
-
-        const response = await fetch(fullUrl, {
-          method: 'GET'
-        });
-
-        const data = await response.json();
-
-        if (data.ok) {
-          btn.textContent = '✅ Worktree created!';
-          // Reload the page to show the new worktree after a short delay
-          setTimeout(() => {
-            window.location.reload();
-          }, 1000);
-        } else {
-          throw new Error(data.error || 'Failed to create worktree');
-        }
-      } catch (err) {
-        console.error('Error creating worktree:', err);
-        alert('Failed to create worktree: ' + err.message);
-        btn.textContent = originalText;
-        btn.disabled = false;
-      }
-    }
 
     fetchStatus();
     fetchRenderStatus();
     checkLinearIssueBranches();
+    fetchLinearProjectUrl();
 
     // Refresh Render status every 60 seconds
     setInterval(fetchRenderStatus, 60000);

@@ -16,8 +16,8 @@ const mockLinearWebhook = {
     "assignee": {
       "id": "assignee-id-123",
       "name": "random-user",
-      "displayName": "SDLC Agent",
-      "email": "sdlc@example.com"
+      "displayName": "Forge Agent",
+      "email": "forge@example.com"
     },
     "state": {
       "name": "In Progress",

@@ -94,3 +94,7 @@ dist/
 soc2-report.md
 soc2-downloads/
 *.backup
+
+# Local project config (contains API keys)
+.forge
+.sdlc

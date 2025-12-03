@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# View Local Agent logs from Console.app
+# View Forge logs from Console.app
 
-echo "📋 Viewing Local Agent logs..."
+echo "📋 Viewing Forge logs..."
 echo ""
-echo "Opening Console.app filtered for Local Agent..."
+echo "Opening Console.app filtered for Forge..."
 echo ""
 
 # Open Console.app and filter for our app
@@ -16,7 +16,7 @@ EOF
 
 echo "In Console.app:"
 echo "  1. Click 'Start' streaming in the toolbar"
-echo "  2. In the search box, type: Local Agent"
+echo "  2. In the search box, type: Forge"
 echo "  3. Or search for: process:Electron"
 echo ""
 echo "You should see all console.log() output from the app including:"

@@ -2,22 +2,36 @@ import fs from 'fs';
 import path from 'path';
 import { runCommand } from '../utils/command.js';
 import { REPO_PATH, WORKTREE_BASE_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
-import { getProjectContextSync } from './projects.js';
+import { getProjectContextSync, getActiveProjectEnv } from './projects.js';
+
+// Cache for forge config (async-loaded, used by sync functions)
+let cachedForgeConfig = null;
 
 /**
- * Get the effective repo path, preferring project context over env vars
+ * Load forge config from active project (call this before using sync getters)
+ */
+export async function loadForgeConfig() {
+  cachedForgeConfig = await getActiveProjectEnv();
+  return cachedForgeConfig;
+}
+
+/**
+ * Get the effective repo path, preferring .forge > project context > env vars
  */
 function getEffectiveRepoPath() {
+  if (cachedForgeConfig?.LOCAL_REPO_PATH) return cachedForgeConfig.LOCAL_REPO_PATH;
   const ctx = getProjectContextSync();
   return ctx?.REPO_PATH || REPO_PATH;
 }
 
 function getEffectiveWorktreeBasePath() {
+  if (cachedForgeConfig?.WORKTREE_BASE_PATH) return cachedForgeConfig.WORKTREE_BASE_PATH;
   const ctx = getProjectContextSync();
   return ctx?.WORKTREE_BASE_PATH || WORKTREE_BASE_PATH;
 }
 
 function getEffectiveWorktreeRepoPath() {
+  if (cachedForgeConfig?.WORKTREE_REPO_PATH) return cachedForgeConfig.WORKTREE_REPO_PATH;
   const ctx = getProjectContextSync();
   return ctx?.WORKTREE_REPO_PATH || WORKTREE_REPO_PATH;
 }
@@ -78,8 +92,8 @@ export async function readIssueDescription(worktreePath) {
       if (line) description += line + ' ';
     }
 
-    const result = { title, description: description.trim() };
-    console.log(`📖 Extracted: title="${title?.substring(0, 50)}...", desc="${result.description.substring(0, 50)}..."`);
+    const result = { title, description: description.trim(), issueFile: `issues/${mdFile}` };
+    console.log(`📖 Extracted: title="${title?.substring(0, 50)}...", desc="${result.description.substring(0, 50)}...", file="${result.issueFile}"`);
     return result;
   } catch (e) {
     console.error(`❌ Error reading issue from ${worktreePath}:`, e.message);
@@ -137,6 +151,9 @@ export function resolveWorktreeBaseDir() {
 }
 
 export async function createWorktree(branch) {
+  // Load forge config from active project before using paths
+  await loadForgeConfig();
+
   const worktreeRepoPath = getEffectiveWorktreeRepoPath();
   const results = [];
   const srcDir = resolveWorktreeBaseDir();

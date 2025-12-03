@@ -3,7 +3,7 @@
 # Exit on any error
 set -e
 
-echo "🚀 Starting SDLC application..."
+echo "🚀 Starting Forge..."
 
 # Function to wait for database to be ready
 wait_for_db() {

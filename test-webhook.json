@@ -11,14 +11,14 @@
       "name": "In Progress"
     },
     "assignee": {
-      "name": "SDLC Agent",
-      "displayName": "SDLC Agent",
-      "username": "sdlc-agent"
+      "name": "Forge Agent",
+      "displayName": "Forge Agent",
+      "username": "forge-agent"
     },
     "delegate": {
-      "name": "SDLC Agent",
-      "displayName": "SDLC Agent",
-      "username": "sdlc-agent"
+      "name": "Forge Agent",
+      "displayName": "Forge Agent",
+      "username": "forge-agent"
     },
     "labels": [
       {

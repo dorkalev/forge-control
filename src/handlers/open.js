@@ -65,7 +65,7 @@ export async function handleOpenFinder(req, res) {
   });
 }
 
-export async function handleOpenGitKraken(req, res) {
+export async function handleOpenMeld(req, res) {
   if (req.method !== 'POST') {
     return respond(res, 405, { ok: false, error: 'Method not allowed' });
   }
@@ -83,20 +83,42 @@ export async function handleOpenGitKraken(req, res) {
         return respond(res, 400, { ok: false, error: 'directory does not exist' });
       }
 
-      console.log(`🦑 Opening GitKraken at: ${directoryPath}`);
-      // Use open command to launch GitKraken with the repository path
-      // Pass the path as an argument using --args
-      const r = await runCommand('open', ['-a', 'GitKraken', '--args', '-p', directoryPath]);
+      console.log(`📊 Opening Meld at: ${directoryPath}`);
+      const r = await runCommand('meld', [directoryPath]);
 
       if (r.code === 0) {
-        console.log(`✅ Successfully opened GitKraken`);
+        console.log(`✅ Successfully opened Meld`);
         return respond(res, 200, { ok: true, ...r });
       } else {
-        console.error(`❌ Failed to open GitKraken: ${r.stderr}`);
-        return respond(res, 500, { ok: false, error: r.stderr || 'Failed to open GitKraken' });
+        console.error(`❌ Failed to open Meld: ${r.stderr}`);
+        return respond(res, 500, { ok: false, error: r.stderr || 'Failed to open Meld. Is it installed? Run: brew install meld' });
       }
     } catch (e) {
       return respond(res, 500, { ok: false, error: e.message });
     }
   });
+}
+
+/**
+ * Check if Meld is installed
+ */
+export async function checkMeldInstalled() {
+  const r = await runCommand('which', ['meld']);
+  return r.code === 0;
+}
+
+/**
+ * Check if tmux is installed
+ */
+export async function checkTmuxInstalled() {
+  const r = await runCommand('which', ['tmux']);
+  return r.code === 0;
+}
+
+/**
+ * Check if Claude Code CLI is installed
+ */
+export async function checkClaudeInstalled() {
+  const r = await runCommand('which', ['claude']);
+  return r.code === 0;
 }

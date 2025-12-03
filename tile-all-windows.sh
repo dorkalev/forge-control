@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Tile all work windows (iTerm2, SDLC, Linear, Slack, Warp, Chrome)
+# Tile all work windows (iTerm2, Forge, Linear, Slack, Warp, Chrome)
 # Brings work windows to foreground and sends all others to background
 # Usage: ./tile-all-windows.sh
 
@@ -18,7 +18,7 @@ set usableWidth to screenWidth
 set usableHeight to screenHeight - menuBarHeight
 
 -- Define work apps
-set workApps to {"iTerm2", "Electron", "Google Chrome", "Linear", "Slack", "Warp"}
+set workApps to {"iTerm2", "Electron", "Forge", "Google Chrome", "Linear", "Slack", "Warp"}
 
 -- Hide all non-work apps
 tell application "System Events"
@@ -45,7 +45,7 @@ tell application "System Events"
     end if
 end tell
 
--- Get SDLC window (either Electron or browser)
+-- Get Forge window (either Electron or browser)
 tell application "System Events"
     -- Try Electron app first
     if exists (process "Electron") then
@@ -53,6 +53,16 @@ tell application "System Events"
             if (count of windows) > 0 then
                 set w to window 1
                 set end of allWindows to {appName:"Electron", windowRef:w}
+            end if
+        end tell
+    end if
+
+    -- Then try the packaged Forge app name
+    if exists (process "Forge") then
+        tell process "Forge"
+            if (count of windows) > 0 then
+                set w to window 1
+                set end of allWindows to {appName:"Forge", windowRef:w}
             end if
         end tell
     end if

@@ -1,5 +1,5 @@
 import { handleCheckout } from '../handlers/checkout.js';
-import { handleOpen, handleOpenTerminal, handleOpenFinder, handleOpenGitKraken } from '../handlers/open.js';
+import { handleOpen, handleOpenTerminal, handleOpenFinder, handleOpenMeld } from '../handlers/open.js';
 import { handleOpenClaude, handleAttachTmux, handleKillTmux, handleTileIterm, handleTileAllWindows } from '../handlers/tmux.js';
 import { handleCleanupBranch, handleHideWorktree } from '../handlers/cleanup.js';
 import { handleRunDev } from '../handlers/dev.js';
@@ -7,12 +7,13 @@ import { handleWorktree } from '../handlers/worktree.js';
 import { handleFolderStatus } from '../handlers/status.js';
 import { handleRoot } from '../handlers/root.js';
 import { handleReleaseNotify } from '../handlers/releases.js';
-import { handleGetUnassignedIssues, handleAssignIssue, handleGetUsers } from '../handlers/linear.js';
+import { handleGetUnassignedIssues, handleAssignIssue, handleGetUsers, handleGetProjectUrl } from '../handlers/linear.js';
 import { handleAutopilotStart, handleAutopilotStop, handleAutopilotStatus, handleAutopilotSetMax } from '../handlers/autopilot.js';
 import { handleRenderStatus } from '../handlers/render.js';
 import { handleIssuesDiff, handleGenerateChangelog } from '../handlers/issues-diff.js';
 import { handleCreateBranch, handleBranchExists, handleCreatePROnly } from '../handlers/branch.js';
 import { handleListProjects, handleSetActiveProject, handleScanProjects } from '../handlers/projects.js';
+import { handleUpdateIssueFromLinear } from '../handlers/sync.js';
 import { respond } from '../utils/http.js';
 import { PORT, REPO_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
 import { getProjectContextSync } from '../services/projects.js';
@@ -63,6 +64,10 @@ export async function routeRequest(req, res, pathname, query) {
       return await handleGetUsers(req, res);
     }
 
+    if (pathname === '/api/linear/project-url') {
+      return await handleGetProjectUrl(req, res, query);
+    }
+
     if (pathname === '/api/autopilot/status') {
       return await handleAutopilotStatus(req, res);
     }
@@ -98,8 +103,8 @@ export async function routeRequest(req, res, pathname, query) {
       return await handleOpenFinder(req, res);
     }
 
-    if (pathname === '/open-gitkraken') {
-      return await handleOpenGitKraken(req, res);
+    if (pathname === '/open-meld') {
+      return await handleOpenMeld(req, res);
     }
 
     if (pathname === '/hide-worktree') {
@@ -164,6 +169,10 @@ export async function routeRequest(req, res, pathname, query) {
 
     if (pathname === '/api/projects/scan') {
       return await handleScanProjects(req, res);
+    }
+
+    if (pathname === '/api/update-issue-from-linear') {
+      return await handleUpdateIssueFromLinear(req, res);
     }
   }
 

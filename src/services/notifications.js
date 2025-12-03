@@ -86,7 +86,7 @@ export async function sendReleaseEmail({ toEmail, tag, releaseNotes, prNumber, p
     const htmlContent = markdownToHtml(releaseNotes);
 
     const emailPayload = {
-      from: process.env.EMAIL_SENDER || 'SDLC System <releases@resend.dev>',
+      from: process.env.EMAIL_SENDER || 'Forge System <releases@resend.dev>',
       to: toEmail,
       subject: `🚀 New Release: ${tag}`,
       html: `
@@ -109,7 +109,7 @@ export async function sendReleaseEmail({ toEmail, tag, releaseNotes, prNumber, p
           <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
 
           <p style="color: #666; font-size: 14px;">
-            This is an automated release notification from the SDLC system.
+            This is an automated release notification from the Forge system.
           </p>
         </body>
         </html>

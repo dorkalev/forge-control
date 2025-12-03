@@ -35,7 +35,7 @@ export async function killSession(sessionName) {
   return runCommand('tmux', ['kill-session', '-t', sessionName]);
 }
 
-export async function createClaudeSession(branch, directoryPath, title = null, ticketId = null) {
+export async function createClaudeSession(branch, directoryPath, title = null, ticketId = null, initialPrompt = null) {
   // Extract ticket ID from branch
   const ticketMatch = branch.match(/^([A-Z]+-\d+)/);
   const baseSessionName = ticketMatch ? ticketMatch[1] : branch;
@@ -47,6 +47,13 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
   // Check if session exists
   if (await sessionExists(sessionName)) {
     console.log(`♻️  Reusing tmux session: ${sessionName}`);
+    // Still send the prompt if provided (for existing sessions)
+    if (initialPrompt) {
+      const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
+      if (result.code === 0) {
+        console.log(`📝 Pre-filled prompt: "${initialPrompt.substring(0, 50)}..."`);
+      }
+    }
     return { sessionName, windowTitle, created: false };
   }
 
@@ -64,47 +71,55 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
   // Start Claude
   await sendKeys(sessionName, ['claude', 'C-m']);
 
+  // If initial prompt provided, wait for Claude to start then type it (without pressing Enter)
+  if (initialPrompt) {
+    // Wait longer for Claude to fully initialize (it takes a few seconds to load)
+    console.log(`⏳ Waiting for Claude to initialize before sending prompt...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Use send-keys with -l flag for literal text (handles special characters)
+    const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
+    if (result.code === 0) {
+      console.log(`📝 Pre-filled prompt: "${initialPrompt.substring(0, 50)}..."`);
+    } else {
+      console.error(`❌ Failed to send prompt: ${result.stderr}`);
+    }
+  }
+
   return { sessionName, windowTitle, created: true };
 }
 
 export async function openSessionInTerminal(sessionName, windowTitle = null) {
-  // Open iTerm2 or Terminal with tmux attach
+  // Check if iTerm2 is available
   const iTermCheck = await runCommand('osascript', ['-e', 'exists application "iTerm"']);
   const useITerm = iTermCheck.code === 0;
 
-  // For AppleScript, we need to sanitize the title to avoid syntax errors
-  // Remove all special characters that could break AppleScript
-  const sanitizedTitle = (windowTitle || sessionName)
-    .replace(/['"\\]/g, '')  // Remove quotes and backslashes
-    .replace(/[^\x20-\x7E]/g, '');  // Remove non-printable chars
-
-  const appleScript = useITerm ? `
-    tell application "iTerm"
-      create window with default profile
-      tell current session of current window
-        set name to "${sanitizedTitle}"
-        write text "tmux attach -t ${sessionName}"
-      end tell
-    end tell
-  ` : `
-    tell application "Terminal"
-      do script "tmux attach -t ${sessionName}"
-      set custom title of front window to "${sanitizedTitle}"
-      activate
-    end tell
-  `;
-
   console.log(`🖥️  Opening ${useITerm ? 'iTerm2' : 'Terminal'} with tmux session: ${sessionName}`);
-  console.log(`📜 AppleScript to execute:\n${appleScript}`);
 
-  const result = await runCommand('osascript', ['-e', appleScript]);
+  if (useITerm) {
+    // Create a .command script that iTerm will execute in a new window
+    const scriptContent = `#!/bin/bash
+exec tmux attach -t ${sessionName} 2>/dev/null || exec tmux new -s ${sessionName}
+`;
+    const scriptPath = `/tmp/forge-iterm-${Date.now()}.command`;
 
-  if (result.code !== 0) {
-    console.error(`❌ AppleScript failed with code ${result.code}`);
-    console.error(`   stdout: ${result.stdout}`);
-    console.error(`   stderr: ${result.stderr}`);
-  } else {
-    console.log(`✅ AppleScript executed successfully`);
+    const writeResult = await runCommand('bash', ['-c', `cat > ${scriptPath} << 'FORGE_EOF'\n${scriptContent}FORGE_EOF\nchmod +x ${scriptPath}`]);
+
+    if (writeResult.code === 0) {
+      const result = await runCommand('open', ['-a', 'iTerm', scriptPath]);
+
+      if (result.code === 0) {
+        console.log(`✅ Opened iTerm with tmux session: ${sessionName}`);
+        setTimeout(() => runCommand('rm', ['-f', scriptPath]), 5000);
+        return { code: 0, sessionName };
+      }
+    }
+  }
+
+  // Fallback for Terminal or if iTerm method failed
+  const result = await runCommand('open', ['-a', useITerm ? 'iTerm' : 'Terminal']);
+  if (result.code === 0) {
+    console.log(`✅ Opened ${useITerm ? 'iTerm' : 'Terminal'} - run: tmux attach -t ${sessionName}`);
+    return { ...result, fallback: true, sessionName };
   }
 
   return result;

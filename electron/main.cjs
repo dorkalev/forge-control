@@ -1,31 +1,48 @@
 const { app, BrowserWindow, ipcMain, nativeImage } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
+const fs = require("fs");
+const forgePort = process.env.FORGE_PORT || process.env.LOCAL_AGENT_PORT || "4665";
+
+// Classic rocketship icon (icon.png) for dock/window
+const rocketIconPath = path.join(__dirname, "icon.png");
+function createRocketIcon() {
+  const img = nativeImage.createFromPath(rocketIconPath);
+  if (!img.isEmpty()) {
+    const size = img.getSize();
+    console.log(`🚀 Loaded rocket icon: ${rocketIconPath} (${size.width}x${size.height})`);
+    return img;
+  }
+
+  console.warn("⚠️ No usable rocket icon found; returning empty icon");
+  return nativeImage.createEmpty();
+}
+const forgeIcon = createRocketIcon();
 
 let win;
 let serverProcess;
 
 function startServer() {
   return new Promise((resolve, reject) => {
-    console.log("🚀 Starting local-agent server...");
+    console.log("🚀 Starting Forge server...");
     console.log("📍 App packaged:", app.isPackaged);
     console.log("📍 __dirname:", __dirname);
     console.log("📍 process.resourcesPath:", process.resourcesPath);
 
     // Determine the correct path based on whether app is packaged
     // Use app.asar.unpacked for files that need to be extracted from asar
-    const sdlcRoot = process.env.SDLC_ROOT || path.join(__dirname, "..");
+    const forgeRoot = process.env.FORGE_ROOT || path.join(__dirname, "..");
     const serverPath = app.isPackaged
       ? path.join(process.resourcesPath, "app.asar.unpacked", "src", "index.js")
-      : path.join(sdlcRoot, "src", "index.js");
+      : path.join(forgeRoot, "src", "index.js");
 
     console.log("📍 Server path:", serverPath);
     console.log("📍 Server exists:", require("fs").existsSync(serverPath));
 
-    // Get the working directory (where .env/.sdlc should be)
-    // Priority: SDLC_CONFIG_DIR (set by CLI) > packaged user data dir > dev mode dir
-    const cwd = process.env.SDLC_CONFIG_DIR
-      ? process.env.SDLC_CONFIG_DIR
+    // Get the working directory (where .env/.forge should be)
+    // Priority: FORGE_CONFIG_DIR (set by CLI) > packaged user data dir > dev mode dir
+    const cwd = process.env.FORGE_CONFIG_DIR
+      ? process.env.FORGE_CONFIG_DIR
       : (app.isPackaged
         ? app.getPath('userData')
         : path.join(__dirname, ".."));
@@ -68,13 +85,14 @@ function startServer() {
 
     // Start the server process
     serverProcess = spawn("node", [serverPath], {
-      cwd: sdlcRoot,  // Run from sdlc root so relative imports work
+      cwd: forgeRoot,  // Run from forge root so relative imports work
       env: {
         ...process.env,
         PATH: fullPath,
         LOCAL_AGENT_CONFIG_DIR: cwd,  // Pass config directory to server
-        SDLC_CONFIG_DIR: cwd,  // Also set SDLC_CONFIG_DIR for consistency
-        SDLC_ROOT: sdlcRoot
+        FORGE_CONFIG_DIR: cwd,  // Also set FORGE_CONFIG_DIR for consistency
+        FORGE_ROOT: forgeRoot,
+        FORGE_PORT: forgePort
       },
       stdio: ["ignore", "pipe", "pipe"]
     });
@@ -106,7 +124,7 @@ function startServer() {
       attempts++;
       console.log(`⏳ Checking server health (attempt ${attempts})...`);
       try {
-        const response = await fetch("http://localhost:4665/health");
+        const response = await fetch(`http://localhost:${forgePort}/health`);
         if (response.ok) {
           console.log("✅ Server is ready");
           clearInterval(checkServer);
@@ -129,8 +147,11 @@ function startServer() {
 async function createWindow() {
   // Set dock icon on macOS
   if (process.platform === 'darwin') {
-    const icon = nativeImage.createFromPath(path.join(__dirname, "icon.png"));
-    app.dock.setIcon(icon);
+    if (!forgeIcon.isEmpty()) {
+      app.dock.setIcon(forgeIcon);
+    } else if (fs.existsSync(rocketIconPath)) {
+      app.dock.setIcon(rocketIconPath);
+    }
   }
 
   win = new BrowserWindow({
@@ -138,8 +159,8 @@ async function createWindow() {
     height: 900,
     frame: false,
     titleBarStyle: "hiddenInset",
-    backgroundColor: "#667eea",
-    icon: path.join(__dirname, "icon.png"),
+    backgroundColor: "#080d1a",
+    icon: forgeIcon.isEmpty() ? undefined : forgeIcon,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -150,10 +171,10 @@ async function createWindow() {
   // Show loading state
   win.loadURL(`data:text/html,
     <html>
-      <body style="margin:0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;justify-content:center;height:100vh;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:white;">
+      <body style="margin:0;background:radial-gradient(circle at 20% 20%, rgba(249, 115, 22, 0.14) 0, transparent 28%),radial-gradient(circle at 80% 0%, rgba(34, 211, 238, 0.14) 0, transparent 26%),linear-gradient(135deg, #0a0f1f 0%, #070b16 100%);display:flex;align-items:center;justify-content:center;height:100vh;font-family:'Space Grotesk',-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#e2e8f0;">
         <div style="text-align:center;">
-          <h1 style="font-size:48px;margin:0;">🚀</h1>
-          <p style="font-size:24px;margin:20px 0 0 0;">Starting Local Agent...</p>
+          <h1 style="font-size:48px;margin:0;">⚡</h1>
+        <p style="font-size:24px;margin:20px 0 0 0;">Spinning up Forge...</p>
         </div>
       </body>
     </html>
@@ -163,8 +184,8 @@ async function createWindow() {
     // Start the server
     await startServer();
 
-    // Point to local-agent server
-    await win.loadURL("http://localhost:4665");
+    // Point to Forge server
+    await win.loadURL(`http://localhost:${forgePort}`);
 
     // Open external links in default browser
     win.webContents.setWindowOpenHandler(({ url }) => {
@@ -174,7 +195,7 @@ async function createWindow() {
 
     // Intercept navigation to external URLs
     win.webContents.on('will-navigate', (event, url) => {
-      if (!url.startsWith('http://localhost:4665')) {
+      if (!url.startsWith(`http://localhost:${forgePort}`)) {
         event.preventDefault();
         require('electron').shell.openExternal(url);
       }
@@ -188,7 +209,7 @@ async function createWindow() {
     console.error("❌ Failed to start:", err);
     win.loadURL(`data:text/html,
       <html>
-        <body style="margin:0;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);display:flex;align-items:center;justify-content:center;height:100vh;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:white;">
+        <body style="margin:0;background:radial-gradient(circle at 20% 20%, rgba(249, 115, 22, 0.14) 0, transparent 28%),radial-gradient(circle at 80% 0%, rgba(34, 211, 238, 0.14) 0, transparent 26%),linear-gradient(135deg, #0a0f1f 0%, #070b16 100%);display:flex;align-items:center;justify-content:center;height:100vh;font-family:'Space Grotesk',-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#e2e8f0;">
           <div style="text-align:center;">
             <h1 style="font-size:48px;margin:0;">❌</h1>
             <p style="font-size:24px;margin:20px 0 0 0;">Failed to start server</p>
@@ -223,12 +244,15 @@ ipcMain.handle("window:openDevTools", () => {
   if (win) win.webContents.openDevTools({ mode: "detach" });
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  console.log(`🚀 Forge icon loaded (empty=${forgeIcon.isEmpty()}, size=${forgeIcon.isEmpty() ? '0x0' : forgeIcon.getSize().width + 'x' + forgeIcon.getSize().height})`);
+  await createWindow();
+});
 
 app.on("window-all-closed", () => {
   // Kill the server process when closing
   if (serverProcess) {
-    console.log("🛑 Stopping local-agent server...");
+    console.log("🛑 Stopping Forge server...");
     serverProcess.kill();
   }
 
@@ -246,7 +270,7 @@ app.on("activate", () => {
 app.on("before-quit", () => {
   // Kill the server process on quit
   if (serverProcess) {
-    console.log("🛑 Stopping local-agent server...");
+    console.log("🛑 Stopping Forge server...");
     serverProcess.kill();
   }
 });

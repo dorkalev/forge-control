@@ -72,3 +72,9 @@ export async function hasUncommittedOrUnpushedChanges(cwd) {
 
   return result;
 }
+
+export async function hasUncommittedChangesForFile(cwd, filePath) {
+  // Check if specific file has uncommitted changes (staged or unstaged)
+  const statusResult = await runCommand('git', ['status', '--porcelain', filePath], { cwd });
+  return statusResult.code === 0 && statusResult.stdout.trim().length > 0;
+}

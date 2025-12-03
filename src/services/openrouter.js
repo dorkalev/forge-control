@@ -130,7 +130,7 @@ export async function generateChangelog(issuesMarkdown, type = 'condensed') {
         'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': process.env.GITHUB_REPO_URL || 'https://github.com/your-org/your-repo',
-        'X-Title': 'SDLC Local Agent'
+        'X-Title': 'Forge'
       },
       body: JSON.stringify({
         model: MODEL,

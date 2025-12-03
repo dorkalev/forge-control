@@ -1,27 +1,27 @@
 {
-  "name": "local-agent",
-  "productName": "Local Agent",
+  "name": "forge-workbench",
+  "productName": "Forge",
   "version": "1.0.0",
-  "description": "Local Agent - Git Worktrees Manager",
+  "description": "Forge – local worktree and delivery cockpit",
   "main": "electron/main.cjs",
   "bin": {
-    "sdlc": "./bin/sdlc.cjs"
+    "forge": "./bin/forge.cjs"
   },
   "scripts": {
     "start": "node migrate.js && node index.js",
     "start:app-only": "node index.js",
     "migrate": "node migrate.js",
     "dev": "node migrate.js && node index.js",
-    "local-agent": "node src/index.js",
+    "forge:server": "node src/index.js",
     "dev:electron": "electron ./electron/main.cjs",
     "app": "electron ./electron/main.cjs",
-    "app:old": "concurrently -k -s first -n SERVER,ELECTRON -c cyan,magenta \"npm:local-agent\" \"wait-on http://localhost:4665/health && npm:dev:electron\"",
+    "app:old": "concurrently -k -s first -n SERVER,ELECTRON -c cyan,magenta \"npm:forge:server\" \"wait-on http://localhost:4665/health && npm:dev:electron\"",
     "build": "electron-builder --mac --dir",
     "build:prod": "electron-builder --mac"
   },
   "build": {
-    "appId": "com.localagent.app",
-    "productName": "Local Agent",
+    "appId": "com.forge.app",
+    "productName": "Forge",
     "asarUnpack": [
       "src/**/*",
       "node_modules/**/*"

@@ -207,7 +207,7 @@ class DatabaseService {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'SDLC-Tools/1.0'
+          'User-Agent': 'Forge/1.0'
         }
       });
 

@@ -117,7 +117,7 @@ class WebhookBranchCreator {
 
     // Look for common repository names in the content
     const repoKeywords = {
-      'sdlc': /\b(sdlc|software.development|development.lifecycle)\b/i,
+      'forge': /\b(forge|software.development|development.lifecycle)\b/i,
       'docs': /\b(docs|documentation|wiki)\b/i,
       'api': /\b(api|backend|server)\b/i,
       'frontend': /\b(frontend|ui|client|web)\b/i,
@@ -139,12 +139,12 @@ class WebhookBranchCreator {
    */
   async getGitHubTokenForUser(username) {
     try {
-      // For SDLC agents, use configured fallback user
-      const fallbackUser = process.env.SDLC_FALLBACK_GITHUB_USER || username;
-      const lookupUser = username.toLowerCase().includes('sdlc') ? fallbackUser : username;
+      // For Forge agents, use configured fallback user
+      const fallbackUser = process.env.FORGE_FALLBACK_GITHUB_USER || username;
+      const lookupUser = username.toLowerCase().includes('forge') ? fallbackUser : username;
 
       if (lookupUser !== username) {
-        console.log(`🔗 SDLC agent detected: using ${lookupUser}'s GitHub token for ${username}`);
+        console.log(`🔗 Forge agent detected: using ${lookupUser}'s GitHub token for ${username}`);
       }
 
       const token = await db.getActiveGitHubToken(lookupUser);
@@ -169,7 +169,7 @@ class WebhookBranchCreator {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/vnd.github.v3+json',
       'Content-Type': 'application/json',
-      'User-Agent': 'SDLC-Tools/1.0'
+      'User-Agent': 'Forge-Tools/1.0'
     };
   }
 
@@ -627,7 +627,7 @@ ${comment}
     sections.push('- [ ] Review and approve');
 
     sections.push('\n## 🤖 Automation');
-    sections.push('This pull request was automatically created by the SDLC webhook system when the Linear issue was assigned to an SDLC agent.');
+    sections.push('This pull request was automatically created by the Forge webhook system when the Linear issue was assigned to a Forge agent.');
 
     return sections.join('\n');
   }
@@ -746,7 +746,7 @@ ${comment}
    */
   async processLinearAssigneeWebhook(webhookData, assigneeUsername) {
     try {
-      console.log(`🚀 ============ PROCESSING SDLC WEBHOOK ============`);
+      console.log(`🚀 ============ PROCESSING FORGE WEBHOOK ============`);
       console.log(`🎯 Processing assignee webhook for user: ${assigneeUsername}`);
       console.log(`📋 Issue: ${webhookData.data?.identifier || 'Unknown'} - "${webhookData.data?.title || 'No title'}"`);
 
@@ -912,11 +912,11 @@ ${comment}
   }
 
   /**
-   * Check if a webhook payload indicates "sdlc" was added as an assignee or delegate
+   * Check if a webhook payload indicates "forge" was added as an assignee or delegate
    */
-  isSDLCAssigneeEvent(webhookData) {
+  isForgeAssigneeEvent(webhookData) {
     try {
-      console.log('🔍 Checking for SDLC assignee/delegate in webhook...');
+      console.log('🔍 Checking for Forge assignee/delegate in webhook...');
 
       // Check various possible structures for Linear webhooks
       const data = webhookData.data || webhookData;
@@ -929,63 +929,63 @@ ${comment}
       console.log(`🔄 Previous assignee ID: ${updatedFrom?.assigneeId || 'none'}`);
       console.log(`🔄 Previous delegate ID: ${updatedFrom?.delegateId || 'none'}`);
 
-      // Helper function to check if a user is SDLC
-      const isSDLCUser = (user) => {
+      // Helper function to check if a user is Forge
+      const isForgeUser = (user) => {
         if (!user) return false;
         const userName = user.name || user.displayName || user.username || user.email || '';
-        return userName.toLowerCase().includes('sdlc');
+        return userName.toLowerCase().includes('forge');
       };
 
       const assignee = data?.assignee;
       const delegate = data?.delegate;
 
-      // For create events, check if SDLC is the initial assignee/delegate
+      // For create events, check if Forge is the initial assignee/delegate
       if (action === 'create' || action === 'created') {
-        if (assignee && isSDLCUser(assignee)) {
+        if (assignee && isForgeUser(assignee)) {
           const assigneeName = assignee.name || assignee.displayName || assignee.username || assignee.email;
-          console.log(`✅ SDLC assignee on new issue: ${assigneeName}`);
-          return { isSDLCEvent: true, assigneeUsername: assigneeName, role: 'assignee' };
+          console.log(`✅ Forge assignee on new issue: ${assigneeName}`);
+          return { isForgeEvent: true, assigneeUsername: assigneeName, role: 'assignee' };
         }
 
-        if (delegate && isSDLCUser(delegate)) {
+        if (delegate && isForgeUser(delegate)) {
           const delegateName = delegate.name || delegate.displayName || delegate.username || delegate.email;
-          console.log(`✅ SDLC delegate on new issue: ${delegateName}`);
-          return { isSDLCEvent: true, assigneeUsername: delegateName, role: 'delegate' };
+          console.log(`✅ Forge delegate on new issue: ${delegateName}`);
+          return { isForgeEvent: true, assigneeUsername: delegateName, role: 'delegate' };
         }
       }
 
-      // For update events, ONLY trigger if assignee/delegate actually changed TO SDLC
+      // For update events, ONLY trigger if assignee/delegate actually changed TO Forge
       if (action === 'update' || action === 'updated') {
         const currentAssigneeId = assignee?.id;
         const previousAssigneeId = updatedFrom?.assigneeId;
         const currentDelegateId = delegate?.id;
         const previousDelegateId = updatedFrom?.delegateId;
 
-        // Check if assignee ID changed AND new assignee is SDLC
-        if (currentAssigneeId && currentAssigneeId !== previousAssigneeId && isSDLCUser(assignee)) {
+        // Check if assignee ID changed AND new assignee is Forge
+        if (currentAssigneeId && currentAssigneeId !== previousAssigneeId && isForgeUser(assignee)) {
           const assigneeName = assignee.name || assignee.displayName || assignee.username || assignee.email;
-          console.log(`✅ SDLC newly assigned (assignee changed from ${previousAssigneeId || 'none'} to ${currentAssigneeId}): ${assigneeName}`);
-          return { isSDLCEvent: true, assigneeUsername: assigneeName, role: 'assignee' };
+          console.log(`✅ Forge newly assigned (assignee changed from ${previousAssigneeId || 'none'} to ${currentAssigneeId}): ${assigneeName}`);
+          return { isForgeEvent: true, assigneeUsername: assigneeName, role: 'assignee' };
         }
 
-        // Check if delegate ID changed AND new delegate is SDLC
-        if (currentDelegateId && currentDelegateId !== previousDelegateId && isSDLCUser(delegate)) {
+        // Check if delegate ID changed AND new delegate is Forge
+        if (currentDelegateId && currentDelegateId !== previousDelegateId && isForgeUser(delegate)) {
           const delegateName = delegate.name || delegate.displayName || delegate.username || delegate.email;
-          console.log(`✅ SDLC newly delegated (delegate changed from ${previousDelegateId || 'none'} to ${currentDelegateId}): ${delegateName}`);
-          return { isSDLCEvent: true, assigneeUsername: delegateName, role: 'delegate' };
+          console.log(`✅ Forge newly delegated (delegate changed from ${previousDelegateId || 'none'} to ${currentDelegateId}): ${delegateName}`);
+          return { isForgeEvent: true, assigneeUsername: delegateName, role: 'delegate' };
         }
 
-        // If we reach here, it's an update event but assignee/delegate didn't change to SDLC
-        if (isSDLCUser(assignee) || isSDLCUser(delegate)) {
-          console.log(`ℹ️ SDLC is assigned but this is not a new assignment (likely title/description update) - skipping branch creation`);
+        // If we reach here, it's an update event but assignee/delegate didn't change to Forge
+        if (isForgeUser(assignee) || isForgeUser(delegate)) {
+          console.log(`ℹ️ Forge is assigned but this is not a new assignment (likely title/description update) - skipping branch creation`);
         }
       }
 
-      console.log('❌ No new SDLC assignment detected');
-      return { isSDLCEvent: false };
+      console.log('❌ No new Forge assignment detected');
+      return { isForgeEvent: false };
     } catch (error) {
-      console.error('❌ Error checking SDLC assignee event:', error.message);
-      return { isSDLCEvent: false };
+      console.error('❌ Error checking Forge assignee event:', error.message);
+      return { isForgeEvent: false };
     }
   }
 }

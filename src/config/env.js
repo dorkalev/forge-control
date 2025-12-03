@@ -2,20 +2,20 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// If SDLC_CONFIG_DIR is set (from CLI wrapper), look for .sdlc there
+// If FORGE_CONFIG_DIR is set (from CLI wrapper), look for .forge there
 // Otherwise, look for .env in the current directory
-const configDir = process.env.SDLC_CONFIG_DIR || process.cwd();
-const configFile = path.join(configDir, '.sdlc');
+const configDir = process.env.FORGE_CONFIG_DIR || process.cwd();
+const configFile = path.join(configDir, '.forge');
 
 console.log('🔧 [Config] Loading configuration from:', configDir);
 
-// Try to load .sdlc first, fallback to .env
+// Try to load .forge first, fallback to .env
 const result = dotenv.config({ path: configFile });
 if (result.error) {
-  console.log('🔧 [Config] No .sdlc file found, trying .env...');
+  console.log('🔧 [Config] No .forge file found, trying .env...');
   dotenv.config({ path: path.join(configDir, '.env') });
 } else {
-  console.log('✅ [Config] Loaded .sdlc configuration');
+  console.log('✅ [Config] Loaded .forge configuration');
 }
 
 // Helper function to expand ~ in paths
@@ -27,7 +27,7 @@ function expandPath(pathStr) {
   return pathStr;
 }
 
-export const PORT = parseInt(process.env.LOCAL_AGENT_PORT || '4665', 10);
+export const PORT = parseInt(process.env.FORGE_PORT || process.env.LOCAL_AGENT_PORT || '4665', 10);
 export const TOKEN = process.env.LOCAL_AGENT_TOKEN || '';
 
 // LOCAL_REPO_PATH: base project path; worktrees placed under <base>/src/<project>/<branch>

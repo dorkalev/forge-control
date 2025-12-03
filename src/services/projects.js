@@ -61,7 +61,7 @@ async function getGitRemoteUrl(repoPath) {
 }
 
 /**
- * Parse a .sdlc or .env file and return key-value pairs
+ * Parse a .forge or .env file and return key-value pairs
  */
 async function parseDotEnvFile(filePath) {
   try {
@@ -93,11 +93,51 @@ async function parseDotEnvFile(filePath) {
 }
 
 /**
- * Read project config from .sdlc file in a repo
+ * Read project config from .forge file in a repo
  */
-async function readProjectSdlcConfig(repoPath) {
-  const sdlcPath = path.join(repoPath, '.sdlc');
-  return await parseDotEnvFile(sdlcPath);
+async function readProjectForgeConfig(repoPath) {
+  const forgePath = path.join(repoPath, '.forge');
+  return await parseDotEnvFile(forgePath);
+}
+
+// Cache for active project's .forge env vars
+let cachedProjectEnv = null;
+let cachedProjectEnvKey = null;
+
+/**
+ * Get environment variables from the active project's .forge file
+ * Returns cached values if the active project hasn't changed
+ */
+export async function getActiveProjectEnv() {
+  const config = await getConfig();
+  const activeKey = config.activeProject;
+
+  if (!activeKey) return null;
+
+  // Return cached if same project
+  if (cachedProjectEnvKey === activeKey && cachedProjectEnv) {
+    return cachedProjectEnv;
+  }
+
+  const project = config.projects[activeKey];
+  if (!project?.repoPath) return null;
+
+  const forgeConfig = await readProjectForgeConfig(project.repoPath);
+  if (forgeConfig) {
+    cachedProjectEnv = forgeConfig;
+    cachedProjectEnvKey = activeKey;
+    console.log(`🔧 [Projects] Loaded .forge env for project: ${activeKey}`);
+  }
+
+  return cachedProjectEnv;
+}
+
+/**
+ * Clear the cached project env (call when switching projects)
+ */
+export function clearProjectEnvCache() {
+  cachedProjectEnv = null;
+  cachedProjectEnvKey = null;
 }
 
 /**
@@ -150,11 +190,11 @@ async function getConfig() {
 
 /**
  * Detect git repositories in a directory
- * Only includes repos that have a .sdlc file with LINEAR_PROJECT defined
+ * Only includes repos that have a .forge file with LINEAR_PROJECT defined
  */
 export async function detectProjects(scanPath = '~/src') {
   const srcDir = expandPath(scanPath);
-  console.log(`🔍 [Projects] Scanning for projects with .sdlc config in ${srcDir}`);
+  console.log(`🔍 [Projects] Scanning for projects with .forge config in ${srcDir}`);
 
   let entries;
   try {
@@ -176,10 +216,10 @@ export async function detectProjects(scanPath = '~/src') {
     // Check if it's a git repo
     if (!await exists(gitDir)) continue;
 
-    // Read .sdlc config file - only include if LINEAR_PROJECT is defined
-    const sdlcConfig = await readProjectSdlcConfig(repoPath);
-    if (!sdlcConfig || !sdlcConfig.LINEAR_PROJECT) {
-      console.log(`⏭️  [Projects] Skipping ${entry.name} (no .sdlc with LINEAR_PROJECT)`);
+    // Read .forge config file - only include if LINEAR_PROJECT is defined
+    const forgeConfig = await readProjectForgeConfig(repoPath);
+    if (!forgeConfig || !forgeConfig.LINEAR_PROJECT) {
+      console.log(`⏭️  [Projects] Skipping ${entry.name} (no .forge with LINEAR_PROJECT)`);
       continue;
     }
 
@@ -188,7 +228,7 @@ export async function detectProjects(scanPath = '~/src') {
     const { owner, repo } = parseGithubRemote(remoteUrl);
 
     // Use LINEAR_PROJECT as the project identifier/name
-    const projectName = sdlcConfig.LINEAR_PROJECT;
+    const projectName = forgeConfig.LINEAR_PROJECT;
 
     projects[projectName] = {
       name: projectName,
@@ -197,9 +237,10 @@ export async function detectProjects(scanPath = '~/src') {
       worktreeBasePath: repoPath,
       githubOwner: owner,
       githubRepo: repo,
-      // Store additional config from .sdlc
-      linearProject: sdlcConfig.LINEAR_PROJECT,
-      linearTeamId: sdlcConfig.LINEAR_TEAM_ID || null,
+      // Store additional config from .forge
+      linearProject: forgeConfig.LINEAR_PROJECT,
+      linearProjectUrl: forgeConfig.LINEAR_PROJECT_URL || null,
+      linearTeamId: forgeConfig.LINEAR_TEAM_ID || null,
       detectedAt: new Date().toISOString()
     };
 
@@ -257,6 +298,10 @@ export async function setActiveProject(projectName) {
 
   config.activeProject = projectName;
   await saveProjectsConfig(config);
+
+  // Clear env cache so next request loads the new project's .forge
+  clearProjectEnvCache();
+
   console.log(`✅ [Projects] Active project set to: ${projectName}`);
   return config.projects[projectName];
 }
@@ -266,9 +311,10 @@ export async function setActiveProject(projectName) {
  */
 export async function listProjects() {
   const config = await getConfig();
-  return Object.values(config.projects).map(p => ({
+  return Object.entries(config.projects).map(([key, p]) => ({
     ...p,
-    isActive: p.name === config.activeProject
+    key,  // The config key used for setActiveProject
+    isActive: key === config.activeProject
   }));
 }
 
@@ -309,23 +355,32 @@ export function getProjectContextSync() {
 }
 
 /**
- * Initialize projects on startup - load config and optionally scan
+ * Initialize projects on startup - always scan for fresh project list
  */
 export async function initProjects(scanPath = '~/src') {
   console.log('🚀 [Projects] Initializing project management...');
 
-  // Load existing config
+  // Load existing config to preserve activeProject setting
   await loadProjectsConfig();
+  const previousActive = cachedConfig.activeProject;
 
-  // If no projects, scan for them
-  if (Object.keys(cachedConfig.projects).length === 0) {
-    console.log('📂 [Projects] No projects configured, running initial scan...');
-    await scanAndMergeProjects(scanPath);
+  // Always scan for projects on init
+  console.log('📂 [Projects] Scanning for projects...');
+  const detected = await detectProjects(scanPath);
+
+  // Replace projects with freshly detected ones
+  cachedConfig.projects = detected;
+
+  // Preserve activeProject if it still exists, otherwise clear it
+  if (previousActive && detected[previousActive]) {
+    cachedConfig.activeProject = previousActive;
+  } else {
+    cachedConfig.activeProject = null;
   }
 
   const projectCount = Object.keys(cachedConfig.projects).length;
   const activeProject = cachedConfig.activeProject;
 
-  console.log(`✅ [Projects] Loaded ${projectCount} projects, active: ${activeProject || 'none'}`);
+  console.log(`✅ [Projects] Found ${projectCount} projects, active: ${activeProject || 'none'}`);
   return cachedConfig;
 }

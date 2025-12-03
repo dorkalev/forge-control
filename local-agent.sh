@@ -1,1 +1,1 @@
-npm run local-agent
+npm run forge:server

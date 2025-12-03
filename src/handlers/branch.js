@@ -6,7 +6,7 @@ import { runCommand } from '../utils/command.js';
 import * as github from '../services/github.js';
 import { getIssue } from '../services/linear.js';
 import { REPO_PATH, GITHUB_REPO_OWNER, GITHUB_REPO_NAME } from '../config/env.js';
-import { getProjectContextSync } from '../services/projects.js';
+import { getProjectContextSync, getActiveProjectEnv } from '../services/projects.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -141,10 +141,15 @@ export async function handleCreateBranch(req, res) {
       });
     }
 
+    // Load project-specific env vars
+    const projectEnv = await getActiveProjectEnv();
+    const linearApiKey = projectEnv?.LINEAR_APP || null;
+    const githubToken = projectEnv?.GITHUB_TOKEN || null;
+
     console.log(`🌿 [Branch] Creating branch for ${issueIdentifier}...`);
 
     // Fetch issue details from Linear
-    const issue = await getIssue(issueId);
+    const issue = await getIssue(issueId, linearApiKey);
     if (!issue) {
       return respond(res, 404, {
         ok: false,
@@ -242,7 +247,8 @@ ${issue.description || 'No description provided'}
       head: branchName,
       base: STAGING_BRANCH,
       body: prBody,
-      draft: true
+      draft: true,
+      token: githubToken
     });
 
     console.log(`✅ [Branch] Draft PR created: ${pr.html_url}`);
@@ -292,13 +298,21 @@ export async function handleBranchExists(req, res) {
       });
     }
 
+    // Load project-specific env vars
+    const projectEnv = await getActiveProjectEnv();
+    const githubToken = projectEnv?.GITHUB_TOKEN || null;
+
     const exists = await branchExists(branchName, config.repoPath);
 
     let hasPR = false;
     if (exists) {
       // Check if there's a PR for this branch
       try {
-        const prs = await github.getPullRequestsForBranch(branchName, 'all');
+        const prs = await github.getPullRequestsForBranch(branchName, 'all', {
+          owner: config.githubOwner,
+          repo: config.githubRepo,
+          token: githubToken
+        });
         hasPR = prs.length > 0;
       } catch (err) {
         console.log('⚠️ Could not check PR existence:', err.message);
@@ -347,10 +361,15 @@ export async function handleCreatePROnly(req, res) {
       });
     }
 
+    // Load project-specific env vars
+    const projectEnv = await getActiveProjectEnv();
+    const linearApiKey = projectEnv?.LINEAR_APP || null;
+    const githubToken = projectEnv?.GITHUB_TOKEN || null;
+
     console.log(`📝 [Branch] Creating PR for existing branch: ${branchName}`);
 
     // Fetch issue details from Linear
-    const issue = await getIssue(issueId);
+    const issue = await getIssue(issueId, linearApiKey);
     if (!issue) {
       return respond(res, 404, {
         ok: false,
@@ -422,7 +441,8 @@ ${issue.description || 'No description provided'}
       head: branchName,
       base: STAGING_BRANCH,
       body: prBody,
-      draft: true
+      draft: true,
+      token: githubToken
     });
 
     console.log(`✅ [Branch] Draft PR created: ${pr.html_url}`);

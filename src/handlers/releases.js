@@ -32,12 +32,12 @@ export async function handleReleaseNotify(req, res) {
   try {
     // Verify authorization
     const authHeader = req.headers['authorization'] || '';
-    const expectedToken = process.env.SDLC_RELEASE_TOKEN;
+    const expectedToken = process.env.FORGE_RELEASE_TOKEN;
 
     if (!expectedToken) {
       return respond(res, 500, {
         ok: false,
-        error: 'Server not configured (missing SDLC_RELEASE_TOKEN)'
+        error: 'Server not configured (missing FORGE_RELEASE_TOKEN)'
       });
     }
 

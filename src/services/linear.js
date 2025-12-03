@@ -3,15 +3,20 @@ import { LINEAR_API_KEY } from '../config/env.js';
 
 const LINEAR_API_URL = 'https://api.linear.app/graphql';
 
-async function executeQuery(query, variables = {}) {
-  if (!LINEAR_API_KEY) {
+// Cache for project URLs
+const projectUrlCache = new Map();
+
+async function executeQuery(query, variables = {}, apiKeyOverride = null) {
+  const apiKey = apiKeyOverride || LINEAR_API_KEY;
+
+  if (!apiKey) {
     throw new Error('LINEAR_API_KEY not configured');
   }
 
   const response = await fetch(LINEAR_API_URL, {
     method: 'POST',
     headers: {
-      'Authorization': LINEAR_API_KEY,
+      'Authorization': apiKey,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({ query, variables })
@@ -24,7 +29,7 @@ async function executeQuery(query, variables = {}) {
   return response.json();
 }
 
-export async function getIssue(issueId) {
+export async function getIssue(issueId, apiKey = null) {
   const query = `
     query($id: String!) {
       issue(id: $id) {
@@ -52,7 +57,7 @@ export async function getIssue(issueId) {
     }
   `;
 
-  const data = await executeQuery(query, { id: issueId });
+  const data = await executeQuery(query, { id: issueId }, apiKey);
 
   if (data.errors) {
     throw new Error(data.errors[0]?.message || 'Linear API error');
@@ -283,7 +288,7 @@ export async function addSubscriber(issueId, subscriberId) {
   return data.data.issueUpdate;
 }
 
-export async function getUsers() {
+export async function getUsers(apiKey = null) {
   const query = `
     query {
       users {
@@ -297,7 +302,7 @@ export async function getUsers() {
     }
   `;
 
-  const data = await executeQuery(query);
+  const data = await executeQuery(query, {}, apiKey);
 
   if (data.errors) {
     throw new Error(data.errors[0]?.message || 'Linear API error');
@@ -307,16 +312,16 @@ export async function getUsers() {
 }
 
 /**
- * Get issues where "sdlc" is the primary assignee (not just subscriber)
+ * Get issues where "forge" is the primary assignee (not just subscriber)
  */
-export async function getSDLCAssignedIssues() {
-  console.log('🔍 [Linear] Fetching SDLC assigned issues...');
+export async function getForgeAssignedIssues() {
+  console.log('🔍 [Linear] Fetching Forge assigned issues...');
 
   const query = `
     query {
       issues(
         filter: {
-          delegate: { name: { eq: "sdlc" } }
+          delegate: { name: { eq: "forge" } }
         }
       ) {
         nodes {
@@ -342,7 +347,7 @@ export async function getSDLCAssignedIssues() {
   }
 
   const allIssues = data.data?.issues?.nodes || [];
-  console.log(`📊 [Linear] Found ${allIssues.length} issues assigned to sdlc`);
+  console.log(`📊 [Linear] Found ${allIssues.length} issues assigned to forge`);
 
   // Only include Todo and In Progress issues (exclude Backlog, Done, In Review)
   const activeIssues = allIssues.filter(issue => {
@@ -382,18 +387,21 @@ export async function getSDLCAssignedIssues() {
 
 /**
  * Get issues assigned to a specific user
+ * @param {string} username - The username to filter by
+ * @param {string} projectName - Optional project name to filter by (e.g., "Vibration Analysis Dashboard")
+ * @param {string} apiKey - Optional API key override (uses env var if not provided)
  */
-export async function getUserAssignedIssues(username) {
+export async function getUserAssignedIssues(username, projectName = null, apiKey = null) {
   if (!username) {
     console.log('⚠️  [Linear] No username provided, skipping user-assigned issues fetch');
     return [];
   }
 
-  console.log(`🔍 [Linear] Fetching issues assigned to: ${username}`);
+  console.log(`🔍 [Linear] Fetching issues assigned to: ${username}${projectName ? ` for project: ${projectName}` : ''}`);
 
   // First, get all users to help debug
   try {
-    const users = await getUsers();
+    const users = await getUsers(apiKey);
     const activeUsers = users.filter(u => u.active);
     console.log(`📋 [Linear] Available active users:`);
     activeUsers.slice(0, 5).forEach(u => {
@@ -403,11 +411,14 @@ export async function getUserAssignedIssues(username) {
     console.log('⚠️  Could not fetch users list:', err.message);
   }
 
+  // Build filter with optional project
+  const projectFilter = projectName ? `, project: { name: { eq: "${projectName}" } }` : '';
+
   const query = `
     query {
       issues(
         filter: {
-          assignee: { name: { eq: "${username}" } }
+          assignee: { name: { eq: "${username}" } }${projectFilter}
         }
       ) {
         nodes {
@@ -425,6 +436,10 @@ export async function getUserAssignedIssues(username) {
             displayName
             email
           }
+          project {
+            id
+            name
+          }
           branchName
           url
           priority
@@ -434,7 +449,7 @@ export async function getUserAssignedIssues(username) {
   `;
 
   try {
-    const data = await executeQuery(query);
+    const data = await executeQuery(query, {}, apiKey);
 
     if (data.errors) {
       console.error('❌ [Linear] Query failed:', JSON.stringify(data.errors, null, 2));
@@ -442,12 +457,12 @@ export async function getUserAssignedIssues(username) {
     }
 
     const allIssues = data.data?.issues?.nodes || [];
-    console.log(`📊 [Linear] Found ${allIssues.length} issues for exact username "${username}"`);
+    console.log(`📊 [Linear] Found ${allIssues.length} issues for exact username "${username}"${projectName ? ` in project "${projectName}"` : ''}`);
 
     // Log assignee info for debugging
     if (allIssues.length > 0) {
       allIssues.slice(0, 3).forEach(issue => {
-        console.log(`  📋 ${issue.identifier}: assignee = ${issue.assignee?.name} (${issue.assignee?.displayName}, ${issue.assignee?.email}), state = ${issue.state?.name} (type: ${issue.state?.type})`);
+        console.log(`  📋 ${issue.identifier}: assignee = ${issue.assignee?.name} (${issue.assignee?.displayName}, ${issue.assignee?.email}), state = ${issue.state?.name} (type: ${issue.state?.type}), project = ${issue.project?.name || 'none'}`);
       });
     }
 
@@ -480,5 +495,52 @@ export async function getUserAssignedIssues(username) {
   } catch (err) {
     console.error(`❌ [Linear] Failed to fetch issues for ${username}:`, err.message);
     return [];
+  }
+}
+
+/**
+ * Get project URL by project name
+ * @param {string} projectName - The project name to search for
+ * @param {string} apiKey - Optional API key override
+ * @returns {string|null} The project URL or null if not found
+ */
+export async function getProjectUrl(projectName, apiKey = null) {
+  if (!projectName) return null;
+
+  // Check cache first
+  if (projectUrlCache.has(projectName)) {
+    return projectUrlCache.get(projectName);
+  }
+
+  const query = `
+    query($name: String!) {
+      projects(filter: { name: { eq: $name } }) {
+        nodes {
+          id
+          name
+          url
+        }
+      }
+    }
+  `;
+
+  try {
+    const data = await executeQuery(query, { name: projectName }, apiKey);
+
+    if (data.errors) {
+      console.error('❌ [Linear] Project query failed:', data.errors);
+      return null;
+    }
+
+    const project = data.data?.projects?.nodes?.[0];
+    if (project?.url) {
+      projectUrlCache.set(projectName, project.url);
+      return project.url;
+    }
+
+    return null;
+  } catch (err) {
+    console.error(`❌ [Linear] Failed to fetch project URL for ${projectName}:`, err.message);
+    return null;
   }
 }

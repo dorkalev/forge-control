@@ -107,7 +107,7 @@ class LinearTaskCategorizer {
       chunks.push(issues.slice(i, i + chunkSize));
     }
 
-    let allSDLCTasks = [];
+    let allForgeTasks = [];
     let allOtherTasks = [];
 
     for (let i = 0; i < chunks.length; i++) {
@@ -116,7 +116,7 @@ class LinearTaskCategorizer {
       const prompt = `
 Analyze these Linear issues and categorize ALL of them into two main groups:
 
-1. SDLC DOCUMENT CREATION TASKS - Tasks that can be completed or started by creating SDLC documents (requirements, design docs, test plans, architecture docs, policies, procedures, etc.)
+1. FORGE DOCUMENT CREATION TASKS - Tasks that can be completed or started by creating FORGE documents (requirements, design docs, test plans, architecture docs, policies, procedures, etc.)
 2. OTHER TASKS - All other implementation, bug fixes, infrastructure, etc.
 
 IMPORTANT: You must categorize EVERY single issue provided. Do not skip any.
@@ -124,7 +124,7 @@ IMPORTANT: You must categorize EVERY single issue provided. Do not skip any.
 For each task, provide:
 - Task ID and title
 - Brief reason for categorization
-- For SDLC document tasks: suggest what type of document should be created
+- For FORGE document tasks: suggest what type of document should be created
 
 Issues to analyze (${chunks[i].length} issues):
 ${JSON.stringify(chunks[i].map(issue => ({
@@ -137,7 +137,7 @@ ${JSON.stringify(chunks[i].map(issue => ({
 
 Please respond in JSON format and categorize ALL ${chunks[i].length} issues:
 {
-  "sdlc_document_tasks": [
+  "forge_document_tasks": [
     {
       "id": "task_id",
       "title": "task_title",
@@ -183,18 +183,18 @@ Please respond in JSON format and categorize ALL ${chunks[i].length} issues:
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const chunkResult = JSON.parse(jsonMatch[0]);
-          allSDLCTasks = allSDLCTasks.concat(chunkResult.sdlc_document_tasks || []);
+          allForgeTasks = allForgeTasks.concat(chunkResult.forge_document_tasks || []);
           allOtherTasks = allOtherTasks.concat(chunkResult.other_tasks || []);
         } else {
           console.error('Could not parse JSON from AI response for chunk', i + 1);
           const fallback = this.fallbackCategorization(chunks[i]);
-          allSDLCTasks = allSDLCTasks.concat(fallback.sdlc_document_tasks || []);
+          allForgeTasks = allForgeTasks.concat(fallback.forge_document_tasks || []);
           allOtherTasks = allOtherTasks.concat(fallback.other_tasks || []);
         }
       } catch (error) {
         console.error(`Error categorizing chunk ${i + 1} with AI:`, error);
         const fallback = this.fallbackCategorization(chunks[i]);
-        allSDLCTasks = allSDLCTasks.concat(fallback.sdlc_document_tasks || []);
+        allForgeTasks = allForgeTasks.concat(fallback.forge_document_tasks || []);
         allOtherTasks = allOtherTasks.concat(fallback.other_tasks || []);
       }
 
@@ -205,13 +205,13 @@ Please respond in JSON format and categorize ALL ${chunks[i].length} issues:
     }
 
     return {
-      sdlc_document_tasks: allSDLCTasks,
+      forge_document_tasks: allForgeTasks,
       other_tasks: allOtherTasks
     };
   }
 
   fallbackCategorization(issues) {
-    const sdlcKeywords = [
+    const forgeKeywords = [
       'document', 'spec', 'requirement', 'design', 'architecture', 'plan',
       'documentation', 'wireframe', 'mockup', 'user story', 'acceptance criteria',
       'test plan', 'strategy', 'proposal', 'rfc', 'adr', 'policy', 'procedure',
@@ -227,18 +227,18 @@ Please respond in JSON format and categorize ALL ${chunks[i].length} issues:
       'logging', 'metrics', 'dashboard', 'reporting', 'analytics'
     ];
 
-    const sdlcTasks = [];
+    const forgeTasks = [];
     const otherTasks = [];
 
     issues.forEach(issue => {
       const text = `${issue.title} ${issue.description || ''}`.toLowerCase();
-      const isSDLCTask = sdlcKeywords.some(keyword => text.includes(keyword));
+      const isForgeTask = forgeKeywords.some(keyword => text.includes(keyword));
 
-      if (isSDLCTask) {
-        sdlcTasks.push({
+      if (isForgeTask) {
+        forgeTasks.push({
           id: issue.id,
           title: issue.title,
-          reason: 'Contains SDLC-related keywords',
+          reason: 'Contains Forge-related keywords',
           suggested_document: 'Requirements or Design Document'
         });
       } else {
@@ -252,7 +252,7 @@ Please respond in JSON format and categorize ALL ${chunks[i].length} issues:
     });
 
     return {
-      sdlc_document_tasks: sdlcTasks,
+      forge_document_tasks: forgeTasks,
       other_tasks: otherTasks
     };
   }
@@ -265,14 +265,14 @@ Generated: ${timestamp}
 Total Issues Analyzed: ${allIssues.length}
 
 ========================================
-SDLC DOCUMENT CREATION TASKS (${categorizedTasks.sdlc_document_tasks.length})
+FORGE DOCUMENT CREATION TASKS (${categorizedTasks.forge_document_tasks.length})
 ========================================
 
-These tasks can be completed or started by creating SDLC documents:
+These tasks can be completed or started by creating FORGE documents:
 
 `;
 
-    categorizedTasks.sdlc_document_tasks.forEach((task, index) => {
+    categorizedTasks.forge_document_tasks.forEach((task, index) => {
       const originalIssue = allIssues.find(issue => issue.id === task.id);
       report += `${index + 1}. ${task.title}
    ID: ${task.id}
@@ -323,11 +323,11 @@ These tasks require implementation, bug fixes, or other non-document work:
 SUMMARY
 ========================================
 
-📋 SDLC Document Tasks: ${categorizedTasks.sdlc_document_tasks.length} tasks can be completed by creating documents
+📋 FORGE Document Tasks: ${categorizedTasks.forge_document_tasks.length} tasks can be completed by creating documents
 🔧 Implementation Tasks: ${categorizedTasks.other_tasks.length} tasks require development work
 
 NEXT STEPS:
-1. Review the SDLC document tasks above
+1. Review the FORGE document tasks above
 2. Let me know which documents you'd like me to create
 3. I can help generate templates and content for any of these documents
 
@@ -358,7 +358,7 @@ NEXT STEPS:
 
     // Also log summary to console
     console.log(`\n📊 SUMMARY:`);
-    console.log(`   SDLC Document Tasks: ${categorizedTasks.sdlc_document_tasks.length}`);
+    console.log(`   FORGE Document Tasks: ${categorizedTasks.forge_document_tasks.length}`);
     console.log(`   Other Tasks: ${categorizedTasks.other_tasks.length}`);
     console.log(`   Total: ${issues.length}`);
   }
@@ -822,11 +822,11 @@ const server = http.createServer(async (req, res) => {
     try {
       // Verify authorization
       const authHeader = req.headers['authorization'] || '';
-      const expectedToken = process.env.SDLC_RELEASE_TOKEN;
+      const expectedToken = process.env.FORGE_RELEASE_TOKEN;
 
       if (!expectedToken) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: 'Server not configured (missing SDLC_RELEASE_TOKEN)' }));
+        res.end(JSON.stringify({ ok: false, error: 'Server not configured (missing FORGE_RELEASE_TOKEN)' }));
         return;
       }
 
@@ -905,7 +905,7 @@ const server = http.createServer(async (req, res) => {
               .replace(/^---$/gm, '<hr>');
 
             const emailPayload = {
-              from: process.env.EMAIL_SENDER || 'SDLC System <releases@resend.dev>',
+              from: process.env.EMAIL_SENDER || 'Forge System <releases@resend.dev>',
               to: toEmail,
               subject: `🚀 New Release: ${tag}`,
               html: `
@@ -922,7 +922,7 @@ const server = http.createServer(async (req, res) => {
                   </p>
                   <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
                   <p style="color: #666; font-size: 14px;">
-                    This is an automated release notification from the SDLC system.
+                    This is an automated release notification from the Forge system.
                   </p>
                 </body>
                 </html>
@@ -1014,13 +1014,13 @@ const server = http.createServer(async (req, res) => {
             return;
           }
 
-          // Process webhook for SDLC assignee events
+          // Process webhook for Forge assignee events
           const branchCreator = new WebhookBranchCreator();
-          const sdlcCheck = branchCreator.isSDLCAssigneeEvent(parsedBody);
+          const forgeCheck = branchCreator.isForgeAssigneeEvent(parsedBody);
 
-          if (sdlcCheck.isSDLCEvent) {
-            console.log(`🎯 SDLC assigned as agent! Processing automatic branch creation...`);
-            const result = await branchCreator.processLinearAssigneeWebhook(parsedBody, sdlcCheck.assigneeUsername);
+          if (forgeCheck.isForgeEvent) {
+            console.log(`🎯 Forge assigned as agent! Processing automatic branch creation...`);
+            const result = await branchCreator.processLinearAssigneeWebhook(parsedBody, forgeCheck.assigneeUsername);
 
             if (result.success) {
               console.log(`✅ Automatic branch creation successful:`, {
@@ -1057,51 +1057,87 @@ const server = http.createServer(async (req, res) => {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GitHub OAuth Login</title>
+    <title>Forge – GitHub OAuth</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        :root {
+            --bg: #080d1a;
+            --panel: rgba(255, 255, 255, 0.05);
+            --border: rgba(255, 255, 255, 0.1);
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #f97316;
+            --accent-2: #22d3ee;
+        }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
             margin: 0;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(249, 115, 22, 0.14) 0, transparent 28%),
+                radial-gradient(circle at 80% 0%, rgba(34, 211, 238, 0.14) 0, transparent 26%),
+                linear-gradient(135deg, #0a0f1f 0%, #070b16 100%);
+            color: var(--text);
+            padding: 24px;
         }
         .container {
             text-align: center;
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--panel);
             padding: 3rem;
             border-radius: 20px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+            border: 1px solid var(--border);
+            max-width: 520px;
+            width: 100%;
         }
         h1 {
+            margin-bottom: 0.75rem;
+            font-size: 2.4rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, rgba(249, 115, 22, 0.18), rgba(34, 211, 238, 0.14));
+            color: var(--text);
+            padding: 8px 12px;
+            border-radius: 999px;
+            font-size: 13px;
+            border: 1px solid var(--border);
+            letter-spacing: 0.04em;
+        }
+        .tagline {
             margin-bottom: 2rem;
-            font-size: 2.5rem;
-            font-weight: 300;
+            color: var(--muted);
+            font-size: 15px;
         }
         .login-btn {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 12px;
-            background: #24292e;
+            background: linear-gradient(135deg, #24292e, #111418);
             color: white;
             padding: 14px 28px;
-            border: none;
-            border-radius: 8px;
+            border: 1px solid #2f353c;
+            border-radius: 12px;
             font-size: 16px;
-            font-weight: 500;
+            font-weight: 700;
             text-decoration: none;
             transition: all 0.2s ease;
             cursor: pointer;
+            box-shadow: 0 18px 40px rgba(0,0,0,0.45);
+            letter-spacing: 0.01em;
         }
         .login-btn:hover {
-            background: #1b1f23;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 24px 50px rgba(0, 0, 0, 0.55);
         }
         .github-icon {
             width: 20px;
@@ -1110,15 +1146,19 @@ const server = http.createServer(async (req, res) => {
         .info {
             margin-top: 2rem;
             font-size: 14px;
-            opacity: 0.8;
-            max-width: 400px;
+            color: var(--muted);
+            max-width: 420px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.6;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚀 SDLC Tools</h1>
-        <p>Sign in with GitHub to access branch creation and other tools</p>
+        <div class="eyebrow">Forge · Local automation for builders</div>
+        <h1>Sign in to Forge</h1>
+        <p class="tagline">Authorize with GitHub so Forge can create branches, mirror issues, and keep your local workbench in sync.</p>
 
         <a href="#" class="login-btn" onclick="startOAuth()">
             <svg class="github-icon" viewBox="0 0 24 24" fill="currentColor">
@@ -1128,7 +1168,7 @@ const server = http.createServer(async (req, res) => {
         </a>
 
         <div class="info">
-            <p>This will redirect you to GitHub for authentication. After authorization, you'll receive an access token to use the SDLC tools.</p>
+            <p>This will redirect you to GitHub for authentication. After authorization, you'll get an access token Forge uses to automate your local toolkit.</p>
         </div>
     </div>
 
@@ -1260,7 +1300,7 @@ const server = http.createServer(async (req, res) => {
   } else if (parsedUrl.pathname === '/' && req.method === 'GET') {
     // Root route
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, message: 'SDLC Tools API', endpoints: ['/webhook', '/login', '/api/tokens', '/api/folder-status'] }));
+    res.end(JSON.stringify({ ok: true, message: 'Forge Tools API', endpoints: ['/webhook', '/login', '/api/tokens', '/api/folder-status'] }));
   } else {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found' }));

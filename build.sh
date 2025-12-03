@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Build Local Agent Electron App
+# Build Forge Electron App
 
-echo "🚀 Building Local Agent..."
+echo "🚀 Building Forge..."
 echo ""
 
 # Clean previous builds
@@ -22,7 +22,7 @@ echo "🔨 Building application..."
 npm run build:prod 2>&1 | grep -v "unable to execute hdiutil" | grep -v "Exit code: 1. Command failed: hdiutil" || true
 
 # Check if .app was created (ignore DMG errors)
-if [ -d "dist/mac-arm64/Local Agent.app" ] || [ -d "dist/mac/Local Agent.app" ]; then
+if [ -d "dist/mac-arm64/Forge.app" ] || [ -d "dist/mac/Forge.app" ]; then
   echo ""
   echo "✅ Build complete!"
   echo ""

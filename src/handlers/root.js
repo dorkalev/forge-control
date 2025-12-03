@@ -7,14 +7,15 @@ import { getOpenPRsToBase } from '../services/github.js';
 import { getUserAssignedIssues } from '../services/linear.js';
 import { renderRootPage } from '../views/root.js';
 import { WORKTREE_REPO_PATH, LOCAL_DEV_URL, LINEAR_API_KEY, LINEAR_USERNAME } from '../config/env.js';
-import { getProjectContextSync, listProjects, getActiveProject } from '../services/projects.js';
+import { getProjectContextSync, listProjects, getActiveProject, getActiveProjectEnv } from '../services/projects.js';
+import { checkMeldInstalled, checkTmuxInstalled, checkClaudeInstalled } from './open.js';
 
 export async function handleRoot(req, res) {
   const accept = (req.headers['accept'] || '').toString();
   const wantsHtml = accept.includes('text/html');
 
   if (!wantsHtml) {
-    return respond(res, 200, { ok: true, message: 'Local Agent API' });
+    return respond(res, 200, { ok: true, message: 'Forge API' });
   }
 
   // Get project context
@@ -28,7 +29,7 @@ export async function handleRoot(req, res) {
   }
 
   if (!worktreeRepoPath) {
-    const configDir = process.env.LOCAL_AGENT_CONFIG_DIR || process.cwd();
+    const configDir = process.env.FORGE_CONFIG_DIR || process.env.LOCAL_AGENT_CONFIG_DIR || process.cwd();
     const envPath = path.join(configDir, '.env');
     const envExamplePath = path.join(configDir, '.env.example');
 
@@ -37,54 +38,72 @@ export async function handleRoot(req, res) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Local Agent - Setup Required</title>
+  <title>Forge Setup</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #080d1a;
+      --panel: rgba(255, 255, 255, 0.05);
+      --border: rgba(255, 255, 255, 0.1);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #f97316;
+      --accent-2: #22d3ee;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(249, 115, 22, 0.14) 0, transparent 28%),
+        radial-gradient(circle at 80% 10%, rgba(34, 211, 238, 0.16) 0, transparent 28%),
+        linear-gradient(135deg, #0a0f1f 0%, #070b16 100%);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
-      color: #333;
+      padding: 24px;
+      color: var(--text);
     }
     .container {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      max-width: 700px;
+      background: var(--panel);
+      border-radius: 16px;
+      box-shadow: 0 28px 90px rgba(0,0,0,0.6);
+      max-width: 760px;
       width: 100%;
-      padding: 40px;
+      padding: 40px 42px;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(14px);
     }
     h1 {
-      color: #667eea;
+      color: var(--text);
       margin-bottom: 10px;
       font-size: 32px;
+      letter-spacing: -0.02em;
     }
     .subtitle {
-      color: #666;
+      color: var(--muted);
       margin-bottom: 30px;
       font-size: 16px;
     }
     .warning {
-      background: #fff3cd;
-      border-left: 4px solid #ffc107;
+      background: linear-gradient(135deg, rgba(249, 115, 22, 0.18), rgba(34, 211, 238, 0.12));
+      border-left: 4px solid var(--accent);
       padding: 15px;
       margin-bottom: 25px;
-      border-radius: 4px;
+      border-radius: 10px;
+      color: var(--text);
     }
     .warning strong {
       display: block;
       margin-bottom: 5px;
-      color: #856404;
+      color: #ffedd5;
+      letter-spacing: 0.01em;
     }
     .section {
       margin-bottom: 30px;
     }
     .section h2 {
-      color: #333;
+      color: var(--text);
       font-size: 20px;
       margin-bottom: 15px;
       display: flex;
@@ -92,10 +111,11 @@ export async function handleRoot(req, res) {
       gap: 10px;
     }
     .step {
-      background: #f8f9fa;
-      padding: 20px;
-      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      padding: 18px 20px;
+      border-radius: 12px;
       margin-bottom: 15px;
+      border: 1px solid var(--border);
     }
     .step-number {
       display: inline-flex;
@@ -103,66 +123,71 @@ export async function handleRoot(req, res) {
       justify-content: center;
       width: 28px;
       height: 28px;
-      background: #667eea;
-      color: white;
+      background: linear-gradient(135deg, #f97316, #fb923c);
+      color: #0b0f1a;
       border-radius: 50%;
       font-weight: bold;
       margin-right: 10px;
       font-size: 14px;
+      box-shadow: 0 10px 30px rgba(249, 115, 22, 0.3);
     }
     .code {
-      background: #2d2d2d;
-      color: #f8f8f2;
+      background: #0b1224;
+      color: var(--text);
       padding: 12px 15px;
-      border-radius: 6px;
+      border-radius: 10px;
       font-family: 'Monaco', 'Menlo', monospace;
       font-size: 13px;
       overflow-x: auto;
       margin: 10px 0;
       position: relative;
+      border: 1px solid var(--border);
     }
     .code-label {
-      color: #888;
+      color: var(--muted);
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 5px;
-      font-weight: 600;
+      font-weight: 700;
     }
     .path {
-      color: #667eea;
-      font-weight: 600;
+      color: var(--accent-2);
+      font-weight: 700;
       word-break: break-all;
     }
     ul {
       margin-left: 20px;
       margin-top: 10px;
+      color: var(--muted);
     }
     li {
       margin-bottom: 8px;
       line-height: 1.6;
     }
     .required {
-      color: #dc3545;
-      font-weight: 600;
+      color: #fbbf24;
+      font-weight: 700;
     }
     .help {
-      background: #e7f3ff;
-      border-left: 4px solid #0066cc;
+      background: rgba(255,255,255,0.04);
+      border-left: 4px solid var(--accent-2);
       padding: 15px;
       margin-top: 25px;
-      border-radius: 4px;
+      border-radius: 12px;
       font-size: 14px;
+      color: var(--muted);
+      border: 1px solid var(--border);
     }
     .help strong {
-      color: #0066cc;
+      color: var(--accent-2);
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>⚙️ Local Agent Setup</h1>
-    <p class="subtitle">Configuration required to start using Local Agent</p>
+    <h1>⚙️ Forge Setup</h1>
+    <p class="subtitle">Forge needs a few details before it can spin up your worktrees.</p>
 
     <div class="warning">
       <strong>Missing Configuration</strong>
@@ -188,7 +213,7 @@ export async function handleRoot(req, res) {
 # Repository containing your git worktrees
 WORKTREE_REPO_PATH=/path/to/your/git/repository
 
-# Optional: Port for the local agent (default: 4665)
+# Optional: Port for the Forge server (default: 4665)
 LOCAL_AGENT_PORT=4665
         </div>
         <p style="margin-top: 15px;"><strong>WORKTREE_REPO_PATH</strong> should point to the git repository where you want to manage worktrees.</p>
@@ -211,7 +236,7 @@ LOCAL_AGENT_PORT=4665
 
     <div class="help">
       <strong>💡 Need Help?</strong><br>
-      After creating your .env file, restart the Local Agent app to apply the configuration.
+      After creating your .env file, restart Forge to apply the configuration.
       Check the .env.example file for all available configuration options.
     </div>
   </div>
@@ -221,19 +246,34 @@ LOCAL_AGENT_PORT=4665
   }
 
   try {
+    // Get projects for selector first (needed for Linear filtering)
+    const projects = await listProjects();
+    const activeProject = await getActiveProject();
+
+    // Load project-specific env vars from .forge file
+    const projectEnv = await getActiveProjectEnv();
+
     // Collect data
     const worktrees = await getWorktrees();
     const existingBranches = new Set(worktrees.map(wt => wt.branch));
-    const openPRs = await getOpenPRs(existingBranches);
-    const linearIssues = await getLinearIssues(existingBranches);
+    const openPRs = await getOpenPRs(existingBranches, projectEnv, activeProject);
+    const linearIssues = await getLinearIssues(existingBranches, activeProject, projectEnv);
     const tmuxSessions = await getTmuxSessions(worktrees);
+
+    // Check tool installations in parallel
+    const [meldInstalled, tmuxInstalled, claudeInstalled] = await Promise.all([
+      checkMeldInstalled(),
+      checkTmuxInstalled(),
+      checkClaudeInstalled()
+    ]);
+    const toolStatus = { meldInstalled, tmuxInstalled, claudeInstalled };
 
     // Render HTML
     const dashboardUrls = {
       datadog: process.env.DATADOG_DASHBOARD_URL || '',
       sentry: process.env.SENTRY_DASHBOARD_URL || ''
     };
-    const html = renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, LOCAL_DEV_URL, dashboardUrls);
+    const html = renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, LOCAL_DEV_URL, dashboardUrls, projects, activeProject, toolStatus);
     return respondHtml(res, 200, html);
   } catch (err) {
     console.error('Error rendering root page:', err);
@@ -268,6 +308,12 @@ async function getWorktrees() {
         const hiddenMarker = path.join(worktreePath, '.hidden');
         if (exists(hiddenMarker)) continue;
 
+        // Skip entries that no longer exist on disk
+        if (!fs.existsSync(worktreePath)) {
+          console.warn(`⚠️  Skipping missing worktree path: ${worktreePath}`);
+          continue;
+        }
+
         // Get folder age
         const stats = fs.statSync(worktreePath);
         const createdAt = stats.birthtime || stats.mtime;
@@ -287,10 +333,15 @@ async function getWorktrees() {
   return worktrees;
 }
 
-async function getOpenPRs(existingBranches) {
+async function getOpenPRs(existingBranches, projectEnv = null, activeProject = null) {
   try {
     const baseBranch = process.env.DEFAULT_BASE_BRANCH || 'main';
-    const prs = await getOpenPRsToBase(baseBranch);
+    const opts = {
+      owner: activeProject?.githubOwner || null,
+      repo: activeProject?.githubRepo || null,
+      token: projectEnv?.GITHUB_TOKEN || null
+    };
+    const prs = await getOpenPRsToBase(baseBranch, opts);
     return prs
       .filter(pr => !existingBranches.has(pr.head.ref))
       .map(pr => ({
@@ -317,13 +368,20 @@ function slugify(text) {
     .substring(0, 50) || 'untitled';
 }
 
-async function getLinearIssues(existingBranches) {
-  if (!LINEAR_API_KEY || !LINEAR_USERNAME) {
+async function getLinearIssues(existingBranches, activeProject = null, projectEnv = null) {
+  // Use project-specific env vars if available, fall back to global
+  const apiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
+  const username = projectEnv?.LINEAR_USERNAME || LINEAR_USERNAME;
+
+  if (!apiKey || !username) {
+    console.log('⚠️ [Linear] Missing LINEAR_APP or LINEAR_USERNAME');
     return [];
   }
 
   try {
-    const issues = await getUserAssignedIssues(LINEAR_USERNAME);
+    // Pass the active project's Linear project name for filtering
+    const linearProjectName = activeProject?.name || null;
+    const issues = await getUserAssignedIssues(username, linearProjectName, apiKey);
     // Filter out issues that already have worktrees
     return issues
       .filter(issue => {
@@ -424,34 +482,51 @@ function renderProjectPickerPage(projects) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SDLC - Select Project</title>
+  <title>Forge - Select Project</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+    :root {
+      --bg: #080d1a;
+      --panel: rgba(255,255,255,0.05);
+      --panel-strong: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.1);
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #f97316;
+      --accent-2: #22d3ee;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(249, 115, 22, 0.14) 0, transparent 28%),
+        radial-gradient(circle at 80% 10%, rgba(34, 211, 238, 0.16) 0, transparent 28%),
+        linear-gradient(135deg, #0a0f1f 0%, #070b16 100%);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
-      color: #333;
+      padding: 24px;
+      color: var(--text);
     }
     .container {
-      background: white;
+      background: var(--panel);
       border-radius: 16px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      max-width: 800px;
+      box-shadow: 0 28px 90px rgba(0,0,0,0.6);
+      max-width: 820px;
       width: 100%;
       padding: 40px;
+      border: 1px solid var(--border);
+      backdrop-filter: blur(12px);
     }
     h1 {
-      color: #667eea;
+      color: var(--text);
       margin-bottom: 8px;
       font-size: 28px;
+      letter-spacing: -0.02em;
     }
     .subtitle {
-      color: #666;
+      color: var(--muted);
       margin-bottom: 30px;
       font-size: 16px;
     }
@@ -466,18 +541,21 @@ function renderProjectPickerPage(projects) {
       align-items: center;
       gap: 16px;
       padding: 16px 20px;
-      border: 2px solid #e5e7eb;
+      border: 1px solid var(--border);
       border-radius: 12px;
       cursor: pointer;
       transition: all 0.2s;
+      background: var(--panel);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.35);
     }
     .project-card:hover {
-      border-color: #667eea;
-      background: #f8f9ff;
+      border-color: rgba(249, 115, 22, 0.5);
+      background: var(--panel-strong);
+      transform: translateY(-1px);
     }
     .project-card.active {
-      border-color: #667eea;
-      background: #f0f4ff;
+      border-color: rgba(34, 211, 238, 0.6);
+      background: var(--panel-strong);
     }
     .project-icon {
       font-size: 32px;
@@ -486,28 +564,30 @@ function renderProjectPickerPage(projects) {
       flex: 1;
     }
     .project-name {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 18px;
-      color: #1f2937;
+      color: var(--text);
+      letter-spacing: -0.01em;
     }
     .project-path {
       font-size: 13px;
-      color: #6b7280;
+      color: var(--muted);
       margin-top: 4px;
       font-family: 'Monaco', 'Menlo', monospace;
     }
     .project-github {
       font-size: 12px;
-      color: #9ca3af;
+      color: var(--muted);
       margin-top: 4px;
     }
     .active-badge {
-      background: #667eea;
-      color: white;
+      background: var(--accent-2);
+      color: #04131f;
       padding: 4px 12px;
       border-radius: 20px;
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
+      box-shadow: 0 10px 25px rgba(34, 211, 238, 0.35);
     }
     .actions {
       display: flex;
@@ -515,22 +595,29 @@ function renderProjectPickerPage(projects) {
       justify-content: flex-end;
     }
     .scan-btn {
-      background: #f3f4f6;
-      color: #374151;
-      border: none;
+      background: var(--panel-strong);
+      color: var(--text);
+      border: 1px solid var(--border);
       padding: 10px 20px;
-      border-radius: 8px;
+      border-radius: 10px;
       font-size: 14px;
       cursor: pointer;
-      font-weight: 500;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      transition: all 0.2s;
     }
     .scan-btn:hover {
-      background: #e5e7eb;
+      border-color: rgba(249, 115, 22, 0.45);
+      transform: translateY(-1px);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.35);
     }
     .empty-state {
       text-align: center;
       padding: 40px;
-      color: #6b7280;
+      color: var(--muted);
+      background: var(--panel-strong);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
     }
     .empty-icon {
       font-size: 48px;
@@ -538,7 +625,7 @@ function renderProjectPickerPage(projects) {
     }
     .empty-state h3 {
       margin-bottom: 8px;
-      color: #374151;
+      color: var(--text);
     }
     .empty-state .scan-btn {
       margin-top: 20px;

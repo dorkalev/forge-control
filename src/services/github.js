@@ -3,25 +3,31 @@ import { GITHUB_REPO_OWNER, GITHUB_REPO_NAME, GITHUB_TOKEN } from '../config/env
 
 const GITHUB_API_VERSION = '2022-11-28';
 
-function getHeaders() {
+function getHeaders(tokenOverride = null) {
+  const token = tokenOverride || GITHUB_TOKEN;
   return {
-    'Authorization': `Bearer ${GITHUB_TOKEN}`,
+    'Authorization': `Bearer ${token}`,
     'Accept': 'application/vnd.github+json',
     'X-GitHub-Api-Version': GITHUB_API_VERSION
   };
 }
 
-export function isConfigured() {
-  return !!(GITHUB_REPO_OWNER && GITHUB_REPO_NAME && GITHUB_TOKEN);
+export function isConfigured(tokenOverride = null) {
+  const token = tokenOverride || GITHUB_TOKEN;
+  return !!token;
 }
 
-export async function getPullRequestsForBranch(branch, state = 'all') {
-  if (!isConfigured()) {
+export async function getPullRequestsForBranch(branch, state = 'all', opts = {}) {
+  const { owner, repo, token } = opts;
+  const effectiveOwner = owner || GITHUB_REPO_OWNER;
+  const effectiveRepo = repo || GITHUB_REPO_NAME;
+
+  if (!isConfigured(token)) {
     throw new Error('GitHub credentials not configured');
   }
 
-  const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/pulls?head=${GITHUB_REPO_OWNER}:${branch}&state=${state}`;
-  const response = await fetch(url, { headers: getHeaders() });
+  const url = `https://api.github.com/repos/${effectiveOwner}/${effectiveRepo}/pulls?head=${effectiveOwner}:${branch}&state=${state}`;
+  const response = await fetch(url, { headers: getHeaders(token) });
 
   if (!response.ok) {
     throw new Error(`GitHub API error: ${response.status}`);
@@ -30,13 +36,17 @@ export async function getPullRequestsForBranch(branch, state = 'all') {
   return response.json();
 }
 
-export async function getOpenPRsToBase(base = process.env.DEFAULT_BASE_BRANCH || 'main') {
-  if (!isConfigured()) {
+export async function getOpenPRsToBase(base = process.env.DEFAULT_BASE_BRANCH || 'main', opts = {}) {
+  const { owner, repo, token } = opts;
+  const effectiveOwner = owner || GITHUB_REPO_OWNER;
+  const effectiveRepo = repo || GITHUB_REPO_NAME;
+
+  if (!isConfigured(token)) {
     throw new Error('GitHub credentials not configured');
   }
 
-  const url = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/pulls?base=${base}&state=open`;
-  const response = await fetch(url, { headers: getHeaders() });
+  const url = `https://api.github.com/repos/${effectiveOwner}/${effectiveRepo}/pulls?base=${base}&state=open`;
+  const response = await fetch(url, { headers: getHeaders(token) });
 
   if (!response.ok) {
     throw new Error(`GitHub API error: ${response.status}`);
@@ -133,15 +143,15 @@ export async function getPullRequest(prNumber) {
   return response.json();
 }
 
-export async function createPullRequest({ owner, repo, title, head, base, body, draft = false }) {
-  if (!isConfigured()) {
+export async function createPullRequest({ owner, repo, title, head, base, body, draft = false, token = null }) {
+  if (!isConfigured(token)) {
     throw new Error('GitHub credentials not configured');
   }
 
   const url = `https://api.github.com/repos/${owner}/${repo}/pulls`;
   const response = await fetch(url, {
     method: 'POST',
-    headers: getHeaders(),
+    headers: getHeaders(token),
     body: JSON.stringify({
       title,
       head,

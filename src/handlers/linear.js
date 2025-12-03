@@ -55,3 +55,22 @@ export async function handleGetUsers(req, res) {
     return respond(res, 500, { ok: false, error: err.message });
   }
 }
+
+export async function handleGetProjectUrl(req, res, query) {
+  if (req.method !== 'GET') {
+    return respond(res, 405, { ok: false, error: 'Method not allowed' });
+  }
+
+  const projectName = query.name;
+  if (!projectName) {
+    return respond(res, 400, { ok: false, error: 'Project name required' });
+  }
+
+  try {
+    const url = await linear.getProjectUrl(projectName);
+    return respond(res, 200, { ok: true, url });
+  } catch (err) {
+    console.error('Error fetching project URL:', err);
+    return respond(res, 500, { ok: false, error: err.message });
+  }
+}
