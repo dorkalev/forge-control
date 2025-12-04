@@ -2,7 +2,7 @@ import { respond } from '../utils/http.js';
 import { runCommand } from '../utils/command.js';
 import { exists } from '../services/worktree.js';
 import { getPullRequestsForBranch } from '../services/github.js';
-import { moveIssueToInReview } from '../services/linear.js';
+import { moveIssueToDone } from '../services/linear.js';
 import { REPO_PATH, WORKTREE_REPO_PATH, LINEAR_API_KEY } from '../config/env.js';
 import { getProjectContextSync } from '../services/projects.js';
 
@@ -216,10 +216,10 @@ async function updateLinearIssue(ticketId, errors, warnings) {
     return;
   }
 
-  console.log(`📝 Updating Linear issue ${ticketId} to "In Review"`);
+  console.log(`📝 Updating Linear issue ${ticketId} to "Done"`);
   try {
-    await moveIssueToInReview(ticketId);
-    console.log(`✅ Linear issue updated to "In Review"`);
+    await moveIssueToDone(ticketId);
+    console.log(`✅ Linear issue updated to "Done"`);
   } catch (err) {
     errors.push(`Error updating Linear issue: ${err.message}`);
   }
