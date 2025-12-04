@@ -157,10 +157,10 @@ export async function handleCreateBranch(req, res) {
       });
     }
 
-    // Generate branch name: feature/{identifier}-{slugified-title}
+    // Generate branch name: {identifier}-{slugified-title}
     const identifier = issueIdentifier.toLowerCase();
     const titleSlug = slugify(issue.title);
-    const branchName = `feature/${identifier}-${titleSlug}`;
+    const branchName = `${identifier}-${titleSlug}`;
 
     console.log(`📋 [Branch] Branch name: ${branchName}`);
 
