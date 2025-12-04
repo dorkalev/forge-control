@@ -98,3 +98,6 @@ soc2-downloads/
 # Local project config (contains API keys)
 .forge
 .sdlc
+
+# Generated project data (environment-specific)
+config/projects.json

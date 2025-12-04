@@ -4,6 +4,16 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const forgePort = process.env.FORGE_PORT || process.env.LOCAL_AGENT_PORT || "4665";
 
+// Ignore EPIPE errors (happens when stdout pipe breaks during restart)
+process.stdout.on('error', (err) => {
+  if (err.code === 'EPIPE') return;
+  throw err;
+});
+process.stderr.on('error', (err) => {
+  if (err.code === 'EPIPE') return;
+  throw err;
+});
+
 // Classic rocketship icon (icon.png) for dock/window
 const rocketIconPath = path.join(__dirname, "icon.png");
 function createRocketIcon() {

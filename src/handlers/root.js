@@ -319,12 +319,21 @@ async function getWorktrees() {
         const createdAt = stats.birthtime || stats.mtime;
         const ageInDays = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
 
+        // Check for dev script
+        const devScriptPath = path.join(worktreePath, 'dev');
+        const hasDevScript = fs.existsSync(devScriptPath);
+
+        // Check if this is a forge-control folder (either main or worktrees)
+        const isForgeControl = worktreePath.includes('forge-control') || worktreePath.includes('forge-control-worktrees');
+
         worktrees.push({
           path: worktreePath,
           branch,
           title: branch,
           description: 'Loading...',
-          ageInDays
+          ageInDays,
+          hasDevScript,
+          isForgeControl
         });
       }
     }

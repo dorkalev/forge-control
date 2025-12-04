@@ -1,3 +1,4 @@
+import path from 'path';
 import { respond } from '../utils/http.js';
 import { openUrl, openTerminal } from '../utils/system.js';
 import { runCommand } from '../utils/command.js';
@@ -105,6 +106,34 @@ export async function handleOpenMeld(req, res) {
 export async function checkMeldInstalled() {
   const r = await runCommand('which', ['meld']);
   return r.code === 0;
+}
+
+export async function handleOpenIssueFile(req, res) {
+  if (req.method !== 'POST') {
+    return respond(res, 405, { ok: false, error: 'Method not allowed' });
+  }
+
+  let body = '';
+  req.on('data', chunk => { body += chunk.toString(); });
+  req.on('end', async () => {
+    try {
+      const { worktreePath, issueFile } = JSON.parse(body);
+      if (!worktreePath || !issueFile) {
+        return respond(res, 400, { ok: false, error: 'worktreePath and issueFile required' });
+      }
+
+      const filePath = path.join(worktreePath, issueFile);
+
+      if (!exists(filePath)) {
+        return respond(res, 400, { ok: false, error: 'file does not exist' });
+      }
+
+      const r = await runCommand('open', [filePath]);
+      return respond(res, 200, { ok: r.code === 0, ...r });
+    } catch (e) {
+      return respond(res, 500, { ok: false, error: e.message });
+    }
+  });
 }
 
 /**

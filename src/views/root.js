@@ -48,19 +48,24 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
   const worktreeRows = worktrees.map(wt => {
     const ageClass = wt.ageInDays > 21 ? 'age-old' : wt.ageInDays > 14 ? 'age-warning' : 'age-fresh';
     const ageText = wt.ageInDays === 0 ? 'Today' : wt.ageInDays === 1 ? '1 day' : `${wt.ageInDays} days`;
-    const ticketMatch = wt.branch.match(/^([A-Z]+-\d+)/);
-    const ticketId = ticketMatch ? ticketMatch[1] : '';
+    const ticketMatch = wt.branch.match(/([A-Z]+-\d+)/i);
+    const ticketId = ticketMatch ? ticketMatch[1].toUpperCase() : '';
     const branchId = wt.branch.replace(/[^a-zA-Z0-9]/g, '-');
     const folderName = wt.path.split('/').pop();
-    
+    const issueFile = ticketId ? `issues/${ticketId}.md` : '';
+
+    const runDevButton = wt.hasDevScript
+      ? `<button onclick="runDev('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}', ${wt.isForgeControl})" class="action-btn btn-run" title="Run ./dev in tmux">▶ Run</button>`
+      : '';
+
     return `
-    <tr data-branch="${branchId}" data-folder="${folderName}" data-path="${wt.path}">
+    <tr data-branch="${branchId}" data-folder="${folderName}" data-path="${wt.path}" data-issue-file="${issueFile}">
       <td class="info-cell">
         <div class="info-header">
           <span class="title">${wt.title}</span>
           <a href="#" class="ticket-btn" id="ticket-btn-${branchId}">${ticketId}</a>
         </div>
-        <div class="description">${wt.description}</div>
+        <div class="description" id="desc-${branchId}">${wt.description}</div>
         <div class="branch-path">${wt.path}</div>
       </td>
       <td class="status-cell" id="status-${branchId}">
@@ -68,7 +73,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       </td>
       <td class="age-cell"><span class="age-badge ${ageClass}">${ageText}</span></td>
       <td class="actions-cell">
-        <button onclick="runDev('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-run" title="Run ./stop.sh && ./dev">▶ Run</button>
+        ${runDevButton}
         <button onclick="openTerminal('${wt.path}')" class="action-btn btn-warp" title="Open in Warp">⌘ Warp</button>
         <button onclick="openClaude('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-claude" title="Open Claude">🤖 Claude</button>
         <button onclick="openInFinder('${wt.path}')" class="action-btn btn-finder" title="Open in Finder">📁 Finder</button>
@@ -403,6 +408,21 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       color: var(--muted);
       font-size: 14px;
       line-height: 1.5;
+    }
+    .show-content-btn {
+      background: var(--panel-strong);
+      border: 1px solid var(--border);
+      color: var(--accent-2);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      margin-left: 6px;
+      transition: all 0.2s;
+    }
+    .show-content-btn:hover {
+      border-color: var(--accent-2);
+      background: rgba(34, 211, 238, 0.1);
     }
     .branch-path {
       font-size: 11px;
@@ -1072,10 +1092,16 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
               titleEl.textContent = data.linear.title;
             }
             if (descEl) {
-              const copyBtn = descEl.querySelector('.copy-btn');
               const description = data.linear.description || 'No description available';
-              descEl.textContent = description;
-              if (copyBtn) descEl.appendChild(copyBtn);
+              const maxLen = 150;
+              const issueFile = row.getAttribute('data-issue-file');
+
+              if (description.length > maxLen && issueFile) {
+                const truncated = description.substring(0, maxLen).trim() + '...';
+                descEl.innerHTML = \`\${truncated} <button class="show-content-btn" onclick="openIssueFile('\${worktreePath}', '\${issueFile}')">Show</button>\`;
+              } else {
+                descEl.textContent = description;
+              }
             }
           }
           
@@ -1100,11 +1126,11 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       }
     }
 
-    async function runDev(path, branch, title, ticketId) {
+    async function runDev(path, branch, title, ticketId, isForgeControl = false) {
       await fetch('/run-dev', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({path, branch, title, ticketId})
+        body: JSON.stringify({path, branch, title, ticketId, isForgeControl})
       });
     }
 
@@ -1153,6 +1179,14 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       if (!data.ok) {
         alert('To use Meld diff tool, install it:\\n\\nbrew install meld');
       }
+    }
+
+    async function openIssueFile(worktreePath, issueFile) {
+      await fetch('/open-issue-file', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ worktreePath, issueFile })
+      });
     }
 
     async function updateIssueFromLinear(worktreePath, issueId) {

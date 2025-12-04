@@ -11,7 +11,8 @@ export async function handleRunDev(req, res) {
   req.on('data', chunk => { body += chunk.toString(); });
   req.on('end', async () => {
     try {
-      const { path: directoryPath, branch, title, ticketId } = JSON.parse(body);
+      const { path: directoryPath, branch, title, ticketId, isForgeControl } = JSON.parse(body);
+      console.log(`🔍 handleRunDev: path=${directoryPath}, isForgeControl=${isForgeControl}`);
       if (!directoryPath || !branch) {
         return respond(res, 400, { ok: false, error: 'path and branch required' });
       }
@@ -48,15 +49,20 @@ export async function handleRunDev(req, res) {
         console.log(`♻️  Reusing tmux session: ${sessionName}`);
       }
 
-      // Run stop.sh and dev commands
-      console.log(`🛑 Running ./stop.sh in ${sessionName}`);
-      await tmux.sendKeys(sessionName, ['./stop.sh', 'C-m']);
+      // Run dev command (use restart.sh for forge-control to kill other instances first)
+      if (isForgeControl) {
+        console.log(`🔄 Running ./restart.sh in ${sessionName} (forge-control)`);
+        await tmux.sendKeys(sessionName, ['./restart.sh', 'C-m']);
+      } else {
+        console.log(`🛑 Running ./stop.sh in ${sessionName}`);
+        await tmux.sendKeys(sessionName, ['./stop.sh', 'C-m']);
 
-      // Wait a moment for stop.sh to complete
-      await new Promise(resolve => setTimeout(resolve, 1000));
+        // Wait a moment for stop.sh to complete
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
-      console.log(`🚀 Running ./dev in ${sessionName}`);
-      await tmux.sendKeys(sessionName, ['./dev', 'C-m']);
+        console.log(`🚀 Running ./dev in ${sessionName}`);
+        await tmux.sendKeys(sessionName, ['./dev', 'C-m']);
+      }
 
       // Open in terminal
       const result = await tmux.openSessionInTerminal(sessionName, windowTitle);
