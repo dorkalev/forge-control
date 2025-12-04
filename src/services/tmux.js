@@ -68,8 +68,8 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
   await setSessionOption(sessionName, 'set-titles', 'on');
   await setSessionOption(sessionName, 'set-titles-string', windowTitle);
 
-  // Start Claude
-  await sendKeys(sessionName, ['claude', 'C-m']);
+  // Start Claude with maximum permissions (skip permission prompts)
+  await sendKeys(sessionName, ['claude --dangerously-skip-permissions', 'C-m']);
 
   // If initial prompt provided, wait for Claude to start then type it (without pressing Enter)
   if (initialPrompt) {
