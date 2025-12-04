@@ -27,7 +27,7 @@ export async function handleOpenClaude(req, res) {
       if (!prompt) {
         const issueInfo = await readIssueDescription(directoryPath);
         if (issueInfo?.issueFile) {
-          prompt = `The current branch ticket is ${issueInfo.issueFile} - read it and make a plan for it. Update this file as the product description with any important technical observations and instructions. It's a high level ticket, so be essential - only add more detail if truly necessary.`;
+          prompt = `The current branch ticket is ${issueInfo.issueFile} - read it and make a plan for it. This file should only contain product or business level descriptions. Update it with corrections or clarifications if needed, but avoid adding technical details.`;
         }
       }
 
