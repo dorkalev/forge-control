@@ -88,6 +88,59 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
   return { sessionName, windowTitle, created: true };
 }
 
+export async function createCodexSession(branch, directoryPath, title = null, ticketId = null, initialPrompt = null) {
+  // Extract ticket ID from branch
+  const ticketMatch = branch.match(/^([A-Z]+-\d+)/);
+  const baseSessionName = ticketMatch ? ticketMatch[1] : branch;
+  const sessionName = `${baseSessionName}-codex`;
+
+  // Create window title
+  const windowTitle = ticketId && title ? `${ticketId} - ${title}` : baseSessionName;
+
+  // Check if session exists
+  if (await sessionExists(sessionName)) {
+    console.log(`♻️  Reusing tmux session: ${sessionName}`);
+    // Still send the prompt if provided (for existing sessions)
+    if (initialPrompt) {
+      const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
+      if (result.code === 0) {
+        console.log(`📝 Pre-filled prompt: "${initialPrompt.substring(0, 50)}..."`);
+      }
+    }
+    return { sessionName, windowTitle, created: false };
+  }
+
+  // Create new session
+  console.log(`📦 Creating tmux session: ${sessionName}`);
+  await createSession(sessionName, directoryPath);
+
+  // Configure tmux status bar and window title
+  await setSessionOption(sessionName, 'status-left', `[${baseSessionName}] Codex `);
+  await setSessionOption(sessionName, 'status-left-length', '40');
+  await renameWindow(sessionName, 0, 'codex');
+  await setSessionOption(sessionName, 'set-titles', 'on');
+  await setSessionOption(sessionName, 'set-titles-string', windowTitle);
+
+  // Start Codex with full auto mode
+  await sendKeys(sessionName, ['codex --full-auto', 'C-m']);
+
+  // If initial prompt provided, wait for Codex to start then type it (without pressing Enter)
+  if (initialPrompt) {
+    // Wait longer for Codex to fully initialize (it takes a few seconds to load)
+    console.log(`⏳ Waiting for Codex to initialize before sending prompt...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Use send-keys with -l flag for literal text (handles special characters)
+    const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
+    if (result.code === 0) {
+      console.log(`📝 Pre-filled prompt: "${initialPrompt.substring(0, 50)}..."`);
+    } else {
+      console.error(`❌ Failed to send prompt: ${result.stderr}`);
+    }
+  }
+
+  return { sessionName, windowTitle, created: true };
+}
+
 export async function openSessionInTerminal(sessionName, windowTitle = null) {
   // Check if iTerm2 is available
   const iTermCheck = await runCommand('osascript', ['-e', 'exists application "iTerm"']);

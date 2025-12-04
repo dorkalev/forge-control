@@ -1,6 +1,6 @@
 import { handleCheckout } from '../handlers/checkout.js';
 import { handleOpen, handleOpenTerminal, handleOpenFinder, handleOpenMeld, handleOpenIssueFile } from '../handlers/open.js';
-import { handleOpenClaude, handleAttachTmux, handleKillTmux, handleTileIterm, handleTileAllWindows } from '../handlers/tmux.js';
+import { handleOpenClaude, handleOpenCodex, handleAttachTmux, handleKillTmux, handleTileIterm, handleTileAllWindows } from '../handlers/tmux.js';
 import { handleCleanupBranch, handleHideWorktree } from '../handlers/cleanup.js';
 import { handleRunDev } from '../handlers/dev.js';
 import { handleWorktree } from '../handlers/worktree.js';
@@ -97,6 +97,10 @@ export async function routeRequest(req, res, pathname, query) {
 
     if (pathname === '/open-claude') {
       return await handleOpenClaude(req, res);
+    }
+
+    if (pathname === '/open-codex') {
+      return await handleOpenCodex(req, res);
     }
 
     if (pathname === '/open-finder') {

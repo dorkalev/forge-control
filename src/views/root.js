@@ -76,6 +76,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         ${runDevButton}
         <button onclick="openTerminal('${wt.path}')" class="action-btn btn-warp" title="Open in Warp">⌘ Warp</button>
         <button onclick="openClaude('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-claude" title="Open Claude">🤖 Claude</button>
+        <button onclick="openCodex('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-codex" title="Open Codex">🧠 Codex</button>
         <button onclick="openInFinder('${wt.path}')" class="action-btn btn-finder" title="Open in Finder">📁 Finder</button>
         <button onclick="openMeld('${wt.path}')" class="action-btn btn-meld" title="Open in Meld">📊 Meld</button>
         <button onclick="cleanupBranch('${wt.path}', '${wt.branch}', '${ticketId}')" class="action-btn btn-cleanup" style="display: none;" title="Delete branch and worktree">🗑 Cleanup!</button>
@@ -532,6 +533,11 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       background: linear-gradient(135deg, #22d3ee, #38bdf8);
       color: #04131f;
       border: 1px solid rgba(56,189,248,0.35);
+    }
+    .btn-codex {
+      background: linear-gradient(135deg, #10b981, #34d399);
+      color: #022c22;
+      border: 1px solid rgba(52,211,153,0.35);
     }
     .btn-warp {
       background: linear-gradient(135deg, #22c55e, #16a34a);
@@ -1157,6 +1163,25 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           alert('To use Claude button, install Claude Code CLI:\\n\\nhttps://claude.ai/download');
         } else {
           alert('Failed to open Claude: ' + error);
+        }
+      }
+    }
+
+    async function openCodex(path, branch, title, ticketId) {
+      const res = await fetch('/open-codex', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path, branch, title, ticketId})
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        const error = data.error || 'Unknown error';
+        if (error.includes('tmux not installed')) {
+          alert('To use Codex button, install tmux:\\n\\nbrew install tmux');
+        } else if (error.includes('codex') || error.includes('Codex')) {
+          alert('To use Codex button, install OpenAI Codex CLI:\\n\\nnpm install -g @openai/codex');
+        } else {
+          alert('Failed to open Codex: ' + error);
         }
       }
     }

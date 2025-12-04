@@ -44,6 +44,47 @@ export async function handleOpenClaude(req, res) {
   });
 }
 
+export async function handleOpenCodex(req, res) {
+  if (req.method !== 'POST') {
+    return respond(res, 405, { ok: false, error: 'Method not allowed' });
+  }
+
+  let body = '';
+  req.on('data', chunk => { body += chunk.toString(); });
+  req.on('end', async () => {
+    try {
+      const { path: directoryPath, branch, title, ticketId, initialPrompt } = JSON.parse(body);
+      if (!directoryPath || !branch) {
+        return respond(res, 400, { ok: false, error: 'path and branch required' });
+      }
+
+      // Check tmux installed
+      if (!(await tmux.isTmuxInstalled())) {
+        return respond(res, 400, { ok: false, error: 'tmux not installed. Install with: brew install tmux' });
+      }
+
+      // Generate initial prompt from issue file if not provided
+      let prompt = initialPrompt;
+      if (!prompt) {
+        const issueInfo = await readIssueDescription(directoryPath);
+        if (issueInfo?.issueFile) {
+          prompt = `The current branch ticket is ${issueInfo.issueFile} - read it and make a plan for it. This file should only contain product or business level descriptions. Update it with corrections or clarifications if needed, but avoid adding technical details.`;
+        }
+      }
+
+      // Create or reuse session
+      const { sessionName, windowTitle } = await tmux.createCodexSession(branch, directoryPath, title, ticketId, prompt);
+
+      // Open in terminal
+      const result = await tmux.openSessionInTerminal(sessionName, windowTitle);
+
+      return respond(res, 200, { ok: result.code === 0, sessionName });
+    } catch (e) {
+      return respond(res, 500, { ok: false, error: e.message });
+    }
+  });
+}
+
 export async function handleAttachTmux(req, res) {
   if (req.method !== 'POST') {
     return respond(res, 405, { ok: false, error: 'Method not allowed' });
