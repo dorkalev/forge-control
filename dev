@@ -1,0 +1,4 @@
+#!/bin/bash
+# Unset FORGE_ROOT to ensure worktree uses its own code
+unset FORGE_ROOT
+npm run app

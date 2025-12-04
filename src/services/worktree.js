@@ -263,4 +263,19 @@ async function copyWorktreeFiles(worktreePath, worktreeRepoPath, results) {
     console.log(`ℹ️  No .claude directory found at ${sourceClaudePath}`);
     results.push({ step: 'copy-claude', code: 0, message: 'No .claude directory to copy' });
   }
+
+  // Symlink .forge file (for forge-control worktrees)
+  const sourceForgePath = path.join(worktreeRepoPath, '.forge');
+  const targetForgePath = path.join(worktreePath, '.forge');
+
+  if (exists(sourceForgePath) && !exists(targetForgePath)) {
+    try {
+      fs.symlinkSync(sourceForgePath, targetForgePath);
+      console.log(`✅ Symlinked .forge to worktree: ${targetForgePath}`);
+      results.push({ step: 'symlink-forge', code: 0, message: 'Symlinked .forge file' });
+    } catch (err) {
+      console.error(`⚠️  Failed to symlink .forge: ${err.message}`);
+      results.push({ step: 'symlink-forge', code: 1, error: err.message });
+    }
+  }
 }
