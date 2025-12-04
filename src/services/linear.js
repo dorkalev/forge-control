@@ -165,6 +165,22 @@ export async function moveIssueToInReview(issueId) {
   return updateIssueState(issueId, inReviewState.id);
 }
 
+export async function moveIssueToDone(issueId) {
+  const states = await getWorkflowStates();
+  console.log('📋 Available workflow states:', states.map(s => `${s.name} (type: ${s.type})`).join(', '));
+
+  // First try to find by type 'completed', then by name 'done'
+  const doneState = states.find(s => s.type === 'completed')
+    || states.find(s => s.name.toLowerCase() === 'done');
+
+  if (!doneState) {
+    throw new Error(`Could not find "Done" workflow state in Linear. Available states: ${states.map(s => s.name).join(', ')}`);
+  }
+
+  console.log(`📋 Using workflow state: ${doneState.name} (type: ${doneState.type})`);
+  return updateIssueState(issueId, doneState.id);
+}
+
 export async function getCurrentCycleUnassignedIssues() {
   const query = `
     query {
