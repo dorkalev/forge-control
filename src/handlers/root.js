@@ -401,7 +401,7 @@ async function getLinearIssues(existingBranches, activeProject = null, projectEn
 
         // Generate parameterized branch name to match what we create
         const titleSlug = slugify(issue.title);
-        const parameterizedBranch = `feature/${issue.identifier.toLowerCase()}-${titleSlug}`;
+        const parameterizedBranch = `${issue.identifier.toLowerCase()}-${titleSlug}`;
 
         return !existingBranches.has(parameterizedBranch);
       })

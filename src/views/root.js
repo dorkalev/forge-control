@@ -111,9 +111,9 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     const branch = issue.branchName || issue.identifier.toLowerCase().replace(/-/g, '_');
     const priorityEmoji = issue.priority === 1 ? '🔥' : issue.priority === 2 ? '⚠️' : issue.priority === 3 ? '📌' : '🔵';
 
-    // Generate parameterized branch name: feature/{identifier}-{slugified-title}
+    // Generate parameterized branch name: {identifier}-{slugified-title}
     const titleSlug = issue.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 50);
-    const parameterizedBranch = 'feature/' + issue.identifier.toLowerCase() + '-' + titleSlug;
+    const parameterizedBranch = issue.identifier.toLowerCase() + '-' + titleSlug;
 
     return `
     <tr data-issue-id="${issueId}">
