@@ -7,7 +7,7 @@ import { getOpenPRsToBase } from '../services/github.js';
 import { getUserAssignedIssues } from '../services/linear.js';
 import { renderRootPage } from '../views/root.js';
 import { WORKTREE_REPO_PATH, LOCAL_DEV_URL, LINEAR_API_KEY, LINEAR_USERNAME } from '../config/env.js';
-import { getProjectContextSync, listProjects, getActiveProject, getActiveProjectEnv } from '../services/projects.js';
+import { getProjectContextSync, listProjects, getActiveProject, getActiveProjectEnv, getLinearProjectNames } from '../services/projects.js';
 import { checkMeldInstalled, checkTmuxInstalled, checkClaudeInstalled } from './open.js';
 
 export async function handleRoot(req, res) {
@@ -253,6 +253,15 @@ LOCAL_AGENT_PORT=4665
     // Load project-specific env vars from .forge file
     const projectEnv = await getActiveProjectEnv();
 
+    // Compute Linear project names for multi-project support
+    let linearProjectNames = [];
+    if (projectEnv) {
+      linearProjectNames = getLinearProjectNames(projectEnv);
+    }
+    if (linearProjectNames.length === 0 && activeProject) {
+      linearProjectNames = getLinearProjectNames(activeProject);
+    }
+
     // Collect data
     const worktrees = await getWorktrees();
     const existingBranches = new Set(worktrees.map(wt => wt.branch));
@@ -273,7 +282,7 @@ LOCAL_AGENT_PORT=4665
       datadog: process.env.DATADOG_DASHBOARD_URL || '',
       sentry: process.env.SENTRY_DASHBOARD_URL || ''
     };
-    const html = renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, LOCAL_DEV_URL, dashboardUrls, projects, activeProject, toolStatus);
+    const html = renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, LOCAL_DEV_URL, dashboardUrls, projects, activeProject, toolStatus, linearProjectNames);
     return respondHtml(res, 200, html);
   } catch (err) {
     console.error('Error rendering root page:', err);
@@ -378,6 +387,12 @@ function slugify(text) {
 }
 
 async function getLinearIssues(existingBranches, activeProject = null, projectEnv = null) {
+  // If no project selected, return special marker to show "select project" message
+  if (!activeProject && !projectEnv) {
+    console.log('⚠️ [Linear] No project selected, skipping Linear issues fetch');
+    return { noProjectSelected: true };
+  }
+
   // Use project-specific env vars if available, fall back to global
   const apiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
   const username = projectEnv?.LINEAR_USERNAME || LINEAR_USERNAME;
@@ -388,9 +403,23 @@ async function getLinearIssues(existingBranches, activeProject = null, projectEn
   }
 
   try {
-    // Pass the active project's Linear project name for filtering
-    const linearProjectName = activeProject?.name || null;
-    const issues = await getUserAssignedIssues(username, linearProjectName, apiKey);
+    // Get Linear project names - prioritize .forge env (user may have updated it)
+    // over cached projects.json config
+    let linearProjectNames = [];
+
+    // First check .forge env directly (most up-to-date)
+    if (projectEnv) {
+      linearProjectNames = getLinearProjectNames(projectEnv);
+    }
+
+    // Fall back to cached project config if .forge didn't have it
+    if (linearProjectNames.length === 0 && activeProject) {
+      linearProjectNames = getLinearProjectNames(activeProject);
+    }
+
+    console.log(`📋 [Root] Linear projects to fetch: [${linearProjectNames.join(', ') || 'all'}]`);
+
+    const issues = await getUserAssignedIssues(username, linearProjectNames, apiKey);
     // Filter out issues that already have worktrees
     return issues
       .filter(issue => {
@@ -409,10 +438,12 @@ async function getLinearIssues(existingBranches, activeProject = null, projectEn
         id: issue.id,
         identifier: issue.identifier,
         title: issue.title,
+        description: issue.description || '',  // Include description for improve spec
         url: issue.url,
         state: issue.state?.name || 'Unknown',
         priority: issue.priority,
-        branchName: issue.branchName
+        branchName: issue.branchName,
+        projectName: issue.project?.name || null  // Include project name for badge
       }));
   } catch (err) {
     console.log('⚠️ Could not fetch Linear issues:', err.message);

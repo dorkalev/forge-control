@@ -74,3 +74,48 @@ export async function handleGetProjectUrl(req, res, query) {
     return respond(res, 500, { ok: false, error: err.message });
   }
 }
+
+export async function handleGetIssueByIdentifier(req, res, query) {
+  if (req.method !== 'GET') {
+    return respond(res, 405, { ok: false, error: 'Method not allowed' });
+  }
+
+  const identifier = query.identifier;
+  if (!identifier) {
+    return respond(res, 400, { ok: false, error: 'Identifier required' });
+  }
+
+  try {
+    const issue = await linear.getIssue(identifier);
+    if (!issue) {
+      return respond(res, 404, { ok: false, error: 'Issue not found' });
+    }
+    return respond(res, 200, { ok: true, issue });
+  } catch (err) {
+    console.error('Error fetching issue:', err);
+    return respond(res, 500, { ok: false, error: err.message });
+  }
+}
+
+export async function handleGetBacklogIssues(req, res, query) {
+  if (req.method !== 'GET') {
+    return respond(res, 405, { ok: false, error: 'Method not allowed' });
+  }
+
+  // Support both 'projects' (comma-separated) and legacy 'project' (single)
+  const projectsParam = query.projects || query.project;
+  if (!projectsParam) {
+    return respond(res, 400, { ok: false, error: 'Project name required' });
+  }
+
+  // Parse comma-separated project names
+  const projectNames = projectsParam.split(',').map(p => p.trim()).filter(p => p);
+
+  try {
+    const issues = await linear.getBacklogIssues(projectNames);
+    return respond(res, 200, { ok: true, issues });
+  } catch (err) {
+    console.error('Error fetching backlog issues:', err);
+    return respond(res, 500, { ok: false, error: err.message });
+  }
+}

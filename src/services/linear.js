@@ -44,6 +44,10 @@ export async function getIssue(issueId, apiKey = null) {
         assignee {
           name
         }
+        project {
+          id
+          name
+        }
         priority
         url
         attachments {
@@ -179,6 +183,62 @@ export async function moveIssueToDone(issueId) {
 
   console.log(`📋 Using workflow state: ${doneState.name} (type: ${doneState.type})`);
   return updateIssueState(issueId, doneState.id);
+}
+
+export async function updateIssueDescription(issueId, description, apiKey = null) {
+  const mutation = `
+    mutation($issueId: String!, $description: String!) {
+      issueUpdate(id: $issueId, input: { description: $description }) {
+        success
+        issue {
+          id
+          identifier
+          title
+          description
+        }
+      }
+    }
+  `;
+
+  const data = await executeQuery(mutation, { issueId, description }, apiKey);
+
+  if (data.errors) {
+    throw new Error(data.errors[0]?.message || 'Linear API error');
+  }
+
+  if (!data.data?.issueUpdate?.success) {
+    throw new Error('Failed to update Linear issue description');
+  }
+
+  return data.data.issueUpdate.issue;
+}
+
+export async function updateIssueTitleAndDescription(issueId, title, description, apiKey = null) {
+  const mutation = `
+    mutation($issueId: String!, $title: String!, $description: String!) {
+      issueUpdate(id: $issueId, input: { title: $title, description: $description }) {
+        success
+        issue {
+          id
+          identifier
+          title
+          description
+        }
+      }
+    }
+  `;
+
+  const data = await executeQuery(mutation, { issueId, title, description }, apiKey);
+
+  if (data.errors) {
+    throw new Error(data.errors[0]?.message || 'Linear API error');
+  }
+
+  if (!data.data?.issueUpdate?.success) {
+    throw new Error('Failed to update Linear issue');
+  }
+
+  return data.data.issueUpdate.issue;
 }
 
 export async function getCurrentCycleUnassignedIssues() {
@@ -402,32 +462,9 @@ export async function getForgeAssignedIssues() {
 }
 
 /**
- * Get issues assigned to a specific user
- * @param {string} username - The username to filter by
- * @param {string} projectName - Optional project name to filter by (e.g., "Vibration Analysis Dashboard")
- * @param {string} apiKey - Optional API key override (uses env var if not provided)
+ * Fetch issues for a single project (internal helper)
  */
-export async function getUserAssignedIssues(username, projectName = null, apiKey = null) {
-  if (!username) {
-    console.log('⚠️  [Linear] No username provided, skipping user-assigned issues fetch');
-    return [];
-  }
-
-  console.log(`🔍 [Linear] Fetching issues assigned to: ${username}${projectName ? ` for project: ${projectName}` : ''}`);
-
-  // First, get all users to help debug
-  try {
-    const users = await getUsers(apiKey);
-    const activeUsers = users.filter(u => u.active);
-    console.log(`📋 [Linear] Available active users:`);
-    activeUsers.slice(0, 5).forEach(u => {
-      console.log(`  - ${u.name} (email: ${u.email})`);
-    });
-  } catch (err) {
-    console.log('⚠️  Could not fetch users list:', err.message);
-  }
-
-  // Build filter with optional project
+async function fetchIssuesForProject(username, projectName, apiKey) {
   const projectFilter = projectName ? `, project: { name: { eq: "${projectName}" } }` : '';
 
   const query = `
@@ -464,16 +501,118 @@ export async function getUserAssignedIssues(username, projectName = null, apiKey
     }
   `;
 
-  try {
-    const data = await executeQuery(query, {}, apiKey);
+  const data = await executeQuery(query, {}, apiKey);
 
-    if (data.errors) {
-      console.error('❌ [Linear] Query failed:', JSON.stringify(data.errors, null, 2));
-      throw new Error(data.errors[0]?.message || 'Linear API error');
+  if (data.errors) {
+    console.error('❌ [Linear] Query failed:', JSON.stringify(data.errors, null, 2));
+    throw new Error(data.errors[0]?.message || 'Linear API error');
+  }
+
+  return data.data?.issues?.nodes || [];
+}
+
+/**
+ * Filter issues to only active ones (Todo, In Progress)
+ */
+function filterActiveIssues(issues) {
+  return issues.filter(issue => {
+    const stateType = issue.state?.type || '';
+    const stateName = (issue.state?.name || '').toLowerCase();
+
+    // Exclude completed
+    if (stateType === 'completed') return false;
+
+    // Exclude in review
+    if (stateName.includes('review')) return false;
+
+    // Exclude backlog
+    if (stateType === 'backlog') return false;
+
+    // Only include "unstarted" (Todo) and "started" (In Progress)
+    return (stateType === 'unstarted' || stateType === 'started');
+  });
+}
+
+/**
+ * Sort issues by priority (urgent first)
+ */
+function sortByPriority(issues) {
+  return issues.sort((a, b) => {
+    // Lower priority number = higher priority (1 = urgent, 4 = low, 0 = no priority)
+    const priorityA = a.priority || 5;
+    const priorityB = b.priority || 5;
+    return priorityA - priorityB;
+  });
+}
+
+/**
+ * Dedupe issues by identifier (in case same issue appears in multiple projects)
+ */
+function dedupeIssues(issues) {
+  const seen = new Set();
+  return issues.filter(issue => {
+    if (seen.has(issue.identifier)) return false;
+    seen.add(issue.identifier);
+    return true;
+  });
+}
+
+/**
+ * Get issues assigned to a specific user
+ * @param {string} username - The username to filter by
+ * @param {string|string[]} projectNames - Optional project name(s) to filter by. Can be a string or array of strings.
+ * @param {string} apiKey - Optional API key override (uses env var if not provided)
+ */
+export async function getUserAssignedIssues(username, projectNames = null, apiKey = null) {
+  if (!username) {
+    console.log('⚠️  [Linear] No username provided, skipping user-assigned issues fetch');
+    return [];
+  }
+
+  // Normalize projectNames to array
+  let projects = [];
+  if (Array.isArray(projectNames)) {
+    projects = projectNames.filter(p => p && p.trim());
+  } else if (projectNames && typeof projectNames === 'string') {
+    projects = [projectNames];
+  }
+
+  const projectsDisplay = projects.length > 0 ? ` for projects: [${projects.join(', ')}]` : '';
+  console.log(`🔍 [Linear] Fetching issues assigned to: ${username}${projectsDisplay}`);
+
+  // First, get all users to help debug
+  try {
+    const users = await getUsers(apiKey);
+    const activeUsers = users.filter(u => u.active);
+    console.log(`📋 [Linear] Available active users:`);
+    activeUsers.slice(0, 5).forEach(u => {
+      console.log(`  - ${u.name} (email: ${u.email})`);
+    });
+  } catch (err) {
+    console.log('⚠️  Could not fetch users list:', err.message);
+  }
+
+  try {
+    let allIssues = [];
+
+    if (projects.length === 0) {
+      // No project filter - fetch all assigned issues
+      allIssues = await fetchIssuesForProject(username, null, apiKey);
+    } else if (projects.length === 1) {
+      // Single project - simple query
+      allIssues = await fetchIssuesForProject(username, projects[0], apiKey);
+    } else {
+      // Multiple projects - fetch each and merge
+      console.log(`📊 [Linear] Fetching issues from ${projects.length} projects...`);
+      for (const projectName of projects) {
+        console.log(`  🔍 Fetching from project: ${projectName}`);
+        const projectIssues = await fetchIssuesForProject(username, projectName, apiKey);
+        console.log(`  📋 Found ${projectIssues.length} issues in ${projectName}`);
+        allIssues.push(...projectIssues);
+      }
     }
 
-    const allIssues = data.data?.issues?.nodes || [];
-    console.log(`📊 [Linear] Found ${allIssues.length} issues for exact username "${username}"${projectName ? ` in project "${projectName}"` : ''}`);
+    console.log(`📊 [Linear] Found ${allIssues.length} total issues for "${username}"${projectsDisplay}`);
 
     // Log assignee info for debugging
     if (allIssues.length > 0) {
@@ -482,34 +621,111 @@ export async function getUserAssignedIssues(username, projectName = null, apiKey
       });
     }
 
-    // Only include Todo and In Progress issues (exclude Backlog, Done, In Review)
-    const activeIssues = allIssues.filter(issue => {
-      const stateType = issue.state?.type || '';
-      const stateName = (issue.state?.name || '').toLowerCase();
+    // Filter, dedupe, and sort
+    const activeIssues = filterActiveIssues(allIssues);
+    const dedupedIssues = dedupeIssues(activeIssues);
+    const sortedIssues = sortByPriority(dedupedIssues);
 
-      // Exclude completed
-      if (stateType === 'completed') {
-        return false;
-      }
-
-      // Exclude in review
-      if (stateName.includes('review')) {
-        return false;
-      }
-
-      // Exclude backlog
-      if (stateType === 'backlog') {
-        return false;
-      }
-
-      // Only include "unstarted" (Todo) and "started" (In Progress)
-      return (stateType === 'unstarted' || stateType === 'started');
-    });
-
-    console.log(`✅ [Linear] ${activeIssues.length} active issues for ${username}`);
-    return activeIssues;
+    console.log(`✅ [Linear] ${sortedIssues.length} active issues for ${username}`);
+    return sortedIssues;
   } catch (err) {
     console.error(`❌ [Linear] Failed to fetch issues for ${username}:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Fetch backlog issues for a single project (internal helper)
+ */
+async function fetchBacklogForProject(projectName, apiKey) {
+  const query = `
+    query($projectName: String!) {
+      issues(
+        filter: {
+          project: { name: { eq: $projectName } }
+          state: { type: { eq: "backlog" } }
+        }
+      ) {
+        nodes {
+          id
+          identifier
+          title
+          description
+          priority
+          url
+          state {
+            name
+            type
+          }
+          assignee {
+            name
+          }
+          project {
+            id
+            name
+          }
+        }
+      }
+    }
+  `;
+
+  const data = await executeQuery(query, { projectName }, apiKey);
+
+  if (data.errors) {
+    console.error('❌ [Linear] Backlog query failed:', JSON.stringify(data.errors, null, 2));
+    throw new Error(data.errors[0]?.message || 'Linear API error');
+  }
+
+  return data.data?.issues?.nodes || [];
+}
+
+/**
+ * Get backlog issues for one or more projects
+ * @param {string|string[]} projectNames - The project name(s) to filter by. Can be string or array.
+ * @param {string} apiKey - Optional API key override
+ * @returns {Array} Array of backlog issues
+ */
+export async function getBacklogIssues(projectNames, apiKey = null) {
+  // Normalize to array
+  let projects = [];
+  if (Array.isArray(projectNames)) {
+    projects = projectNames.filter(p => p && p.trim());
+  } else if (projectNames && typeof projectNames === 'string') {
+    projects = [projectNames];
+  }
+
+  if (projects.length === 0) {
+    console.log('⚠️  [Linear] No project name provided for backlog issues');
+    return [];
+  }
+
+  const projectsDisplay = `[${projects.join(', ')}]`;
+  console.log(`🔍 [Linear] Fetching backlog issues for projects: ${projectsDisplay}`);
+
+  try {
+    let allIssues = [];
+
+    if (projects.length === 1) {
+      // Single project - simple query
+      allIssues = await fetchBacklogForProject(projects[0], apiKey);
+    } else {
+      // Multiple projects - fetch each and merge
+      for (const projectName of projects) {
+        console.log(`  🔍 Fetching backlog from project: ${projectName}`);
+        const projectIssues = await fetchBacklogForProject(projectName, apiKey);
+        console.log(`  📋 Found ${projectIssues.length} backlog issues in ${projectName}`);
+        allIssues.push(...projectIssues);
+      }
+    }
+
+    // Dedupe and sort by priority
+    const dedupedIssues = dedupeIssues(allIssues);
+    const sortedIssues = sortByPriority(dedupedIssues);
+
+    console.log(`✅ [Linear] Found ${sortedIssues.length} total backlog issues for projects ${projectsDisplay}`);
+    return sortedIssues;
+  } catch (err) {
+    console.error(`❌ [Linear] Failed to fetch backlog issues:`, err.message);
     return [];
   }
 }

@@ -93,6 +93,47 @@ async function parseDotEnvFile(filePath) {
 }
 
 /**
+ * Parse LINEAR_PROJECTS comma-separated value into array
+ * Handles project names with spaces (comma is the delimiter)
+ */
+function parseLinearProjects(value) {
+  if (!value) return [];
+  return value.split(',').map(p => p.trim()).filter(p => p.length > 0);
+}
+
+/**
+ * Get Linear project names from a project config
+ * Returns array of project names (handles both LINEAR_PROJECT and LINEAR_PROJECTS)
+ * @param {Object} projectConfig - Project config object or .forge env object
+ * @returns {string[]} Array of project names
+ */
+export function getLinearProjectNames(projectConfig) {
+  if (!projectConfig) return [];
+
+  // Check for multi-project config first (LINEAR_PROJECTS takes precedence)
+  if (projectConfig.linearProjects && projectConfig.linearProjects.length > 0) {
+    return projectConfig.linearProjects;
+  }
+
+  // Check for LINEAR_PROJECTS in .forge env format
+  if (projectConfig.LINEAR_PROJECTS) {
+    return parseLinearProjects(projectConfig.LINEAR_PROJECTS);
+  }
+
+  // Fall back to single project (LINEAR_PROJECT)
+  if (projectConfig.linearProject) {
+    return [projectConfig.linearProject];
+  }
+
+  // Check for LINEAR_PROJECT in .forge env format
+  if (projectConfig.LINEAR_PROJECT) {
+    return [projectConfig.LINEAR_PROJECT];
+  }
+
+  return [];
+}
+
+/**
  * Read project config from .forge file in a repo
  */
 async function readProjectForgeConfig(repoPath) {
@@ -190,7 +231,7 @@ async function getConfig() {
 
 /**
  * Detect git repositories in a directory
- * Only includes repos that have a .forge file with LINEAR_PROJECT defined
+ * Only includes repos that have a .forge file with LINEAR_PROJECT or LINEAR_PROJECTS defined
  */
 export async function detectProjects(scanPath = '~/src') {
   const srcDir = expandPath(scanPath);
@@ -216,19 +257,36 @@ export async function detectProjects(scanPath = '~/src') {
     // Check if it's a git repo
     if (!await exists(gitDir)) continue;
 
-    // Read .forge config file - only include if LINEAR_PROJECT is defined
+    // Read .forge config file - include if LINEAR_PROJECT or LINEAR_PROJECTS is defined
     const forgeConfig = await readProjectForgeConfig(repoPath);
-    if (!forgeConfig || !forgeConfig.LINEAR_PROJECT) {
-      console.log(`⏭️  [Projects] Skipping ${entry.name} (no .forge with LINEAR_PROJECT)`);
+    if (!forgeConfig) {
+      console.log(`⏭️  [Projects] Skipping ${entry.name} (no .forge file)`);
       continue;
     }
+
+    // Check for LINEAR_PROJECTS (multi-project) or LINEAR_PROJECT (single)
+    const hasLinearProjects = forgeConfig.LINEAR_PROJECTS && forgeConfig.LINEAR_PROJECTS.trim();
+    const hasLinearProject = forgeConfig.LINEAR_PROJECT && forgeConfig.LINEAR_PROJECT.trim();
+
+    if (!hasLinearProjects && !hasLinearProject) {
+      console.log(`⏭️  [Projects] Skipping ${entry.name} (no LINEAR_PROJECT or LINEAR_PROJECTS)`);
+      continue;
+    }
+
+    // Parse multi-project config
+    const linearProjects = hasLinearProjects
+      ? parseLinearProjects(forgeConfig.LINEAR_PROJECTS)
+      : [];
 
     // Extract GitHub info from remote
     const remoteUrl = await getGitRemoteUrl(repoPath);
     const { owner, repo } = parseGithubRemote(remoteUrl);
 
-    // Use LINEAR_PROJECT as the project identifier/name
-    const projectName = forgeConfig.LINEAR_PROJECT;
+    // Use folder name as the project identifier for multi-project repos,
+    // or LINEAR_PROJECT for single-project repos (backwards compatible)
+    const projectName = hasLinearProjects
+      ? entry.name  // Use folder name for multi-project repos
+      : forgeConfig.LINEAR_PROJECT;
 
     projects[projectName] = {
       name: projectName,
@@ -237,14 +295,18 @@ export async function detectProjects(scanPath = '~/src') {
       worktreeBasePath: repoPath,
       githubOwner: owner,
       githubRepo: repo,
-      // Store additional config from .forge
-      linearProject: forgeConfig.LINEAR_PROJECT,
+      // Store Linear project config - support both single and multi
+      linearProject: hasLinearProject ? forgeConfig.LINEAR_PROJECT : null,
+      linearProjects: linearProjects,  // Array of project names (empty if single-project)
       linearProjectUrl: forgeConfig.LINEAR_PROJECT_URL || null,
       linearTeamId: forgeConfig.LINEAR_TEAM_ID || null,
       detectedAt: new Date().toISOString()
     };
 
-    console.log(`📂 [Projects] Found: ${projectName} (${entry.name}) - GitHub: ${owner}/${repo || entry.name}`);
+    const projectsDisplay = linearProjects.length > 0
+      ? `[${linearProjects.join(', ')}]`
+      : forgeConfig.LINEAR_PROJECT;
+    console.log(`📂 [Projects] Found: ${projectName} (${entry.name}) - Linear: ${projectsDisplay} - GitHub: ${owner}/${repo || entry.name}`);
   }
 
   console.log(`✅ [Projects] Detected ${Object.keys(projects).length} projects`);

@@ -29,8 +29,20 @@ function loadRocketIconDataUrl() {
 
 const rocketIconDataUrl = loadRocketIconDataUrl();
 
-export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, localDevUrl = 'http://localhost:8001', dashboardUrls = {}, projects = [], activeProject = null, toolStatus = {}) {
+/**
+ * Get display name for a project badge
+ * Shows full project name (no truncation)
+ */
+function getProjectDisplayName(projectName) {
+  if (!projectName) return '';
+  return projectName;
+}
+
+export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, localDevUrl = 'http://localhost:8001', dashboardUrls = {}, projects = [], activeProject = null, toolStatus = {}, linearProjectNames = []) {
   const { meldInstalled = true, tmuxInstalled = true, claudeInstalled = true } = toolStatus;
+
+  // Linear project names for multi-project support (JSON stringified for frontend)
+  const linearProjectNamesJson = JSON.stringify(linearProjectNames);
 
   // Generate project selector options
   const projectOptions = projects.map(p => `
@@ -75,6 +87,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       <td class="actions-cell">
         ${runDevButton}
         <button onclick="openTerminal('${wt.path}')" class="action-btn btn-warp" title="Open in Warp">⌘ Warp</button>
+        ${ticketId ? `<button onclick="improveSpecForWorktree('${ticketId}', this)" class="action-btn btn-secondary" title="Improve Spec">✨ Spec</button>` : ''}
         <button onclick="openClaude('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-claude" title="Open Claude">🤖 Claude</button>
         <button onclick="openCodex('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-codex" title="Open Codex">🧠 Codex</button>
         <button onclick="openInFinder('${wt.path}')" class="action-btn btn-finder" title="Open in Finder">📁 Finder</button>
@@ -107,7 +120,11 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     </tr>`;
   }).join('');
 
-  const linearIssueRows = linearIssues.map(issue => {
+  // Check if we need to show "select project" message
+  const noProjectSelected = linearIssues?.noProjectSelected === true;
+  const linearIssuesList = Array.isArray(linearIssues) ? linearIssues : [];
+
+  const linearIssueRows = linearIssuesList.map(issue => {
     const issueId = issue.identifier.replace(/[^a-zA-Z0-9]/g, '-');
     const branch = issue.branchName || issue.identifier.toLowerCase().replace(/-/g, '_');
     const priorityEmoji = issue.priority === 1 ? '🔥' : issue.priority === 2 ? '⚠️' : issue.priority === 3 ? '📌' : '🔵';
@@ -116,8 +133,25 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     const titleSlug = issue.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 50);
     const parameterizedBranch = issue.identifier.toLowerCase() + '-' + titleSlug;
 
+    // Generate project badge (extract short code from project name)
+    const projectBadge = issue.projectName
+      ? `<span class="project-badge">${getProjectDisplayName(issue.projectName)}</span>`
+      : '';
+
+    // Escape title and description for data attributes
+    const escapedTitle = (issue.title || '').replace(/"/g, '&quot;');
+    const escapedDesc = (issue.description || '').replace(/"/g, '&quot;');
+
+    // Truncate description for preview
+    const descPreview = issue.description
+      ? (issue.description.length > 120
+          ? issue.description.substring(0, 120).replace(/\n/g, ' ') + '...'
+          : issue.description.replace(/\n/g, ' '))
+      : '';
+    const hasMoreDesc = issue.description && issue.description.length > 120;
+
     return `
-    <tr data-issue-id="${issueId}">
+    <tr data-issue-id="${issueId}" data-linear-id="${issue.id}" data-issue-identifier="${issue.identifier}" data-issue-title="${escapedTitle}" data-issue-desc="${escapedDesc}">
       <td colspan="3" style="padding: 12px; color: var(--text);">
         <div style="display: flex; align-items: center; gap: 12px;">
           <span>${priorityEmoji}</span>
@@ -126,12 +160,24 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
               ${issue.identifier}: ${issue.title}
             </a>
             <div style="font-size: 12px; color: var(--muted); margin-top: 4px;">
-              <strong id="branch-name-${issueId}">Checking...</strong> · ${issue.state}
+              ${projectBadge}<strong id="branch-name-${issueId}">Checking...</strong> · ${issue.state}
             </div>
+            ${descPreview ? `
+            <div class="issue-desc-preview" style="font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.4;">
+              <span id="desc-preview-${issueId}">${descPreview}</span>
+              ${hasMoreDesc ? `<button onclick="showFullDescription('${issueId}')" class="more-btn">more</button>` : ''}
+            </div>
+            ` : ''}
           </div>
         </div>
       </td>
       <td class="actions-cell">
+        <button
+          onclick="improveSpecFromRow(this)"
+          class="action-btn btn-secondary"
+          id="improve-linear-${issueId}">
+          ✨ Spec
+        </button>
         <button
           id="btn-linear-${issueId}"
           data-issue-id="${issue.id || issue.identifier}"
@@ -179,6 +225,9 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       --danger: #f43f5e;
     }
     * { box-sizing: border-box; }
+    /* Hide scrollbars globally but allow scrolling */
+    ::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; -ms-overflow-style: none; }
     body {
       font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       margin: 0; padding: 0;
@@ -472,7 +521,27 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     .status-wip { background: rgba(249,115,22,0.2); color: #fed7aa; font-weight: 800; border-color: rgba(249,115,22,0.5); }
     .status-sync { background: rgba(34,211,238,0.2); color: #cffafe; border-color: rgba(34,211,238,0.5); cursor: pointer; }
     .status-sync:hover { background: rgba(34,211,238,0.35); }
-    .status-conflict { background: rgba(244,63,94,0.2); color: #fecdd3; border-color: rgba(244,63,94,0.5); }
+    .status-upload { background: rgba(34,197,94,0.2); color: #bbf7d0; border-color: rgba(34,197,94,0.5); cursor: pointer; }
+    .status-upload:hover { background: rgba(34,197,94,0.35); }
+    .status-conflict { background: rgba(244,63,94,0.2); color: #fecdd3; border-color: rgba(244,63,94,0.5); cursor: pointer; }
+    .status-conflict:hover { background: rgba(244,63,94,0.35); }
+    .sync-btn {
+      background: rgba(30,41,59,0.8);
+      border: 1px solid rgba(148,163,184,0.3);
+      color: #e2e8f0;
+      padding: 2px 6px;
+      margin-left: 4px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+      vertical-align: middle;
+    }
+    .sync-btn:hover { background: rgba(51,65,85,0.9); }
+    .sync-upload { color: #86efac; border-color: rgba(34,197,94,0.5); }
+    .sync-upload:hover { background: rgba(34,197,94,0.2); }
+    .sync-download { color: #93c5fd; border-color: rgba(59,130,246,0.5); }
+    .sync-download:hover { background: rgba(59,130,246,0.2); }
     .status-render-building { background: rgba(245,158,11,0.15); color: #fde68a; }
     .status-render-failed { background: rgba(244,63,94,0.2); color: #fecdd3; border-color: rgba(244,63,94,0.4); }
     .status-render-suspended { background: rgba(148,163,184,0.18); color: #e2e8f0; }
@@ -495,6 +564,32 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     .age-fresh { background: rgba(34,197,94,0.16); color: #bbf7d0; border-color: rgba(34,197,94,0.3); }
     .age-warning { background: rgba(245,158,11,0.16); color: #fde68a; border-color: rgba(245,158,11,0.3); }
     .age-old { background: rgba(244,63,94,0.16); color: #fecdd3; border-color: rgba(244,63,94,0.3); }
+    .project-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(99, 102, 241, 0.2));
+      color: #c4b5fd;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-right: 8px;
+      border: 1px solid rgba(139, 92, 246, 0.3);
+    }
+    .more-btn {
+      background: none;
+      border: none;
+      color: var(--accent-2);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 0 4px;
+      margin-left: 4px;
+      text-decoration: underline;
+    }
+    .more-btn:hover {
+      color: var(--accent);
+    }
     .actions-cell {
       white-space: normal;
       width: 237px;
@@ -528,6 +623,15 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     }
     .btn-run:hover {
       border-color: #fecdd3;
+    }
+    .btn-secondary {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(99, 102, 241, 0.25));
+      color: #c4b5fd;
+      border: 1px solid rgba(139, 92, 246, 0.4);
+    }
+    .btn-secondary:hover {
+      border-color: rgba(139, 92, 246, 0.7);
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(99, 102, 241, 0.35));
     }
     .btn-claude {
       background: linear-gradient(135deg, #22d3ee, #38bdf8);
@@ -652,6 +756,14 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       max-height: calc(80vh - 80px);
       overflow-y: auto;
       color: var(--text);
+      scrollbar-width: none; /* Firefox */
+      -ms-overflow-style: none; /* IE/Edge */
+    }
+    .modal-body::-webkit-scrollbar {
+      display: none; /* Chrome/Safari/Opera */
+    }
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none; /* Chrome/Safari/Opera */
     }
     .issue-card {
       background: var(--panel);
@@ -814,6 +926,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         ${dashboardUrls.datadog ? `<button onclick="window.open('${dashboardUrls.datadog}', '_blank')" class="header-btn">📊 DataDog</button>` : ''}
         ${dashboardUrls.sentry ? `<button onclick="window.open('${dashboardUrls.sentry}', '_blank')" class="header-btn">🐛 Sentry</button>` : ''}
         <button onclick="showUnassignedIssues()" class="header-btn">📌 Unassigned</button>
+        <button onclick="showBacklogIssues()" class="header-btn">📋 Backlog</button>
         <button onclick="showIssuesDiff()" class="header-btn">📝 Release Notes</button>
         <button onclick="openAutopilotSettings()" id="autopilot-btn" class="header-btn">🤖 Autopilot: OFF</button>
         <button onclick="tileWindows()" class="header-btn">🎯 Tile iTerm</button>
@@ -861,9 +974,17 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       </table>
     </div>` : ''}
 
-    ${linearIssues.length > 0 ? `
+    ${noProjectSelected ? `
     <div class="section">
-      <div class="section-header">🎯 My Linear Issues (${linearIssues.length})</div>
+      <div class="section-header">🎯 My Linear Issues</div>
+      <div style="padding: 24px; text-align: center; color: var(--muted);">
+        <div style="font-size: 32px; margin-bottom: 12px;">📁</div>
+        <div style="font-weight: 600; color: var(--text); margin-bottom: 8px;">Select a project first</div>
+        <div style="font-size: 13px;">Use the project selector in the header to choose a project and see your Linear issues.</div>
+      </div>
+    </div>` : linearIssuesList.length > 0 ? `
+    <div class="section">
+      <div class="section-header">🎯 My Linear Issues (${linearIssuesList.length})</div>
       <table>
         <thead><tr>
           <th colspan="3">Issue</th>
@@ -942,6 +1063,82 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           <button onclick="saveMaxParallel()" class="assign-btn" style="background: linear-gradient(135deg, #22d3ee, #38bdf8); border-color: rgba(34,211,238,0.45);">
             Save Settings
           </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backlog Issues Modal -->
+  <div id="backlogModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📋 Backlog Issues</h2>
+        <button class="modal-close" onclick="closeBacklogModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="backlogModalBody">
+        <p style="text-align: center; color: var(--muted);">Loading...</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Spec Approval Modal -->
+  <div id="specApprovalModal" class="modal">
+    <div class="modal-content" style="max-width: 1000px;">
+      <div class="modal-header">
+        <h2>✨ Improved Spec for <span id="specIssueIdentifier"></span></h2>
+        <button class="modal-close" onclick="closeSpecApprovalModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="specApprovalContent" style="
+          background: var(--panel);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 20px;
+          max-height: 500px;
+          overflow-y: auto;
+          font-size: 14px;
+          line-height: 1.6;
+          white-space: pre-wrap;
+          color: var(--text);
+          margin-bottom: 20px;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        " class="hide-scrollbar">
+          Loading...
+        </div>
+        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+          <button onclick="rejectSpec()" class="assign-btn" style="background: linear-gradient(135deg, #475569, #334155); border-color: rgba(148,163,184,0.4);">
+            ❌ Reject
+          </button>
+          <button onclick="approveSpec()" id="approveSpecBtn" class="assign-btn" style="background: linear-gradient(135deg, #22c55e, #16a34a); border-color: rgba(34,197,94,0.4);">
+            ✅ Approve & Update Linear
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Description Modal -->
+  <div id="descriptionModal" class="modal">
+    <div class="modal-content" style="max-width: 700px;">
+      <div class="modal-header">
+        <h2>📋 <span id="descModalIdentifier"></span></h2>
+        <button class="modal-close" onclick="closeDescriptionModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <h3 id="descModalTitle" style="color: var(--text); margin-bottom: 16px; font-size: 18px;"></h3>
+        <div id="descModalContent" style="
+          background: var(--panel);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 20px;
+          max-height: 400px;
+          overflow-y: auto;
+          font-size: 14px;
+          line-height: 1.6;
+          white-space: pre-wrap;
+          color: var(--muted-strong);
+        ">
         </div>
       </div>
     </div>
@@ -1066,17 +1263,32 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
             html += '<span class="status-badge status-wip">WIP</span>';
           }
 
-          // Add issue sync badge if Linear has updates
+          // Add issue sync badge if there are sync differences
           if (data.issueSync) {
+            const linearId = (folder.match(/([A-Za-z]+-\\d+)/i)?.[0] || '').toUpperCase();
             if (data.issueSync.hasConflict) {
-              html += '<span class="status-badge status-conflict" title="Local issue file has uncommitted changes but Linear has updates">⚠️ Issue Conflict</span>';
+              // Both have content and they differ - show conflict with both buttons
+              html += \`<span class="status-badge status-conflict" onclick="showIssueDiff('\${worktreePath}', '\${linearId}')" title="Click to see diff between local and Linear">⚠️ Conflict</span>\`;
+              html += \`<button class="sync-btn sync-upload" onclick="event.stopPropagation(); uploadIssueToLinear('\${worktreePath}', '\${linearId}')" title="Upload local changes to Linear">↑</button>\`;
+              html += \`<button class="sync-btn sync-download" onclick="event.stopPropagation(); updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Download from Linear (overwrite local)">↓</button>\`;
+            } else if (data.issueSync.hasLocalUpdate && !data.issueSync.hasUpdate) {
+              // Only local has content - show upload option
+              html += \`<span class="status-badge status-upload" onclick="uploadIssueToLinear('\${worktreePath}', '\${linearId}')" title="Local has description not in Linear - click to upload">⬆️ Push to Linear</span>\`;
+            } else if (data.issueSync.hasUpdate && !data.issueSync.hasLocalUpdate) {
+              // Only Linear has content - show download option
+              html += \`<span class="status-badge status-sync" onclick="updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Linear description has changed - click to update local file">⬇️ Pull from Linear</span>\`;
             } else if (data.issueSync.hasUpdate) {
-              const linearId = (folder.match(/([A-Za-z]+-\\d+)/i)?.[0] || '').toUpperCase();
-              html += \`<span class="status-badge status-sync" onclick="updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Linear description has changed - click to update local file">🔄 Update from Linear</span>\`;
+              // Both have content but no uncommitted local changes - show download option
+              html += \`<span class="status-badge status-sync" onclick="updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Linear description differs - click to update local file">🔄 Sync from Linear</span>\`;
             }
           }
 
           if (data.linear && !data.linear.error) {
+            // Add project badge first
+            if (data.linear.project?.name) {
+              html += \`<span class="project-badge">\${data.linear.project.name}</span>\`;
+            }
+
             const stateType = data.linear.state?.type || '';
             let linearClass = 'status-linear-default';
             if (stateType === 'completed') linearClass = 'status-linear-done';
@@ -1215,7 +1427,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     }
 
     async function updateIssueFromLinear(worktreePath, issueId) {
-      if (!confirm(\`Update local issue file from Linear?\\n\\nThis will overwrite the local issues/\${issueId}.md file with the latest description from Linear.\`)) {
+      if (!confirm(\`Download from Linear?\\n\\nThis will overwrite the local issues/\${issueId}.md file with the latest description from Linear.\`)) {
         return;
       }
 
@@ -1229,13 +1441,57 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         const data = await res.json();
 
         if (data.ok) {
-          alert(\`✅ Updated \${data.issueFile}\\n\\nTitle: \${data.title}\`);
+          alert(\`✅ Downloaded from Linear\\n\\nUpdated: issues/\${issueId}.md\`);
           location.reload();
         } else {
           throw new Error(data.error || 'Failed to update issue');
         }
       } catch (err) {
         alert('Error updating issue: ' + err.message);
+      }
+    }
+
+    async function uploadIssueToLinear(worktreePath, issueId) {
+      if (!confirm(\`Upload to Linear?\\n\\nThis will update the Linear issue \${issueId} with your local description.\`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/upload-issue-to-linear', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ worktreePath, issueId })
+        });
+
+        const data = await res.json();
+
+        if (data.ok) {
+          alert(\`✅ Uploaded to Linear\\n\\nUpdated: \${issueId}\`);
+          location.reload();
+        } else {
+          throw new Error(data.error || 'Failed to upload issue');
+        }
+      } catch (err) {
+        alert('Error uploading issue: ' + err.message);
+      }
+    }
+
+    async function showIssueDiff(worktreePath, issueId) {
+      try {
+        const res = await fetch('/api/issue-diff', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ worktreePath, issueId })
+        });
+
+        const data = await res.json();
+
+        if (!data.ok) {
+          throw new Error(data.error || 'Failed to show diff');
+        }
+        // Diff opens in VS Code, no action needed here
+      } catch (err) {
+        alert('Error showing diff: ' + err.message);
       }
     }
 
@@ -1346,6 +1602,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
     // Linear project URL (fetched dynamically)
     let linearProjectUrl = 'https://linear.app';
     const activeProjectName = '${activeProject?.linearProject || ''}';
+    const linearProjectNames = ${linearProjectNamesJson};
 
     async function fetchLinearProjectUrl() {
       if (!activeProjectName) return;
@@ -1490,6 +1747,268 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
 
     function closeUnassignedModal() {
       document.getElementById('unassignedModal').style.display = 'none';
+    }
+
+    // Backlog Issues functions
+    async function showBacklogIssues() {
+      const modal = document.getElementById('backlogModal');
+      const modalBody = document.getElementById('backlogModalBody');
+
+      modal.style.display = 'block';
+      modalBody.innerHTML = '<p style="text-align: center; color: var(--muted);">Loading...</p>';
+
+      // Use multi-project array if available, fall back to single project
+      const projectsParam = linearProjectNames.length > 0
+        ? linearProjectNames.join(',')
+        : activeProjectName;
+
+      if (!projectsParam) {
+        modalBody.innerHTML = '<p style="text-align: center; color: var(--muted);">Select a project first to view backlog issues.</p>';
+        return;
+      }
+
+      try {
+        const res = await fetch(\`/api/linear/backlog-issues?projects=\${encodeURIComponent(projectsParam)}\`);
+        const data = await res.json();
+
+        if (!data.ok) {
+          throw new Error(data.error || 'Failed to load backlog issues');
+        }
+
+        const issues = data.issues;
+
+        if (issues.length === 0) {
+          modalBody.innerHTML = '<p style="text-align: center; color: var(--muted);">No backlog issues found for these projects.</p>';
+          return;
+        }
+
+        // Render issues
+        const issuesHtml = issues.map(issue => {
+          const desc = issue.description ? issue.description.substring(0, 150) + (issue.description.length > 150 ? '...' : '') : 'No description';
+          const priorityEmoji = issue.priority === 1 ? '🔥' : issue.priority === 2 ? '⚠️' : issue.priority === 3 ? '📌' : '🔵';
+          const assigneeName = issue.assignee?.name || 'Unassigned';
+          const projectBadge = issue.project?.name
+            ? \`<span class="project-badge">\${issue.project.name}</span>\`
+            : '';
+
+          // Store issue data for the improve spec button
+          const escapedTitle = (issue.title || '').replace(/"/g, '&quot;');
+          const escapedDesc = (issue.description || '').replace(/"/g, '&quot;');
+
+          return \`
+            <div class="issue-card" data-issue-id="\${issue.id}" data-issue-identifier="\${issue.identifier}" data-issue-title="\${escapedTitle}" data-issue-desc="\${escapedDesc}">
+              <div class="issue-header">
+                <div class="issue-title">\${priorityEmoji} \${issue.title}</div>
+                <a href="\${issue.url}" target="_blank" class="issue-id">\${projectBadge}\${issue.identifier}</a>
+              </div>
+              <div class="issue-description">\${desc}</div>
+              <div class="issue-footer">
+                <div class="issue-meta">
+                  <span class="issue-state">\${issue.state?.name || 'Backlog'}</span>
+                  <span class="issue-cycle">\${assigneeName}</span>
+                </div>
+                <button
+                  onclick="improveSpecFromCard(this)"
+                  class="assign-btn"
+                  id="improve-\${issue.id}"
+                >
+                  ✨ Improve Spec
+                </button>
+              </div>
+            </div>
+          \`;
+        }).join('');
+
+        modalBody.innerHTML = issuesHtml;
+      } catch (err) {
+        modalBody.innerHTML = \`<p style="text-align: center; color: #f43f5e;">Error: \${err.message}</p>\`;
+      }
+    }
+
+    function closeBacklogModal() {
+      document.getElementById('backlogModal').style.display = 'none';
+    }
+
+    // Improve Spec functions
+    let currentSpecIssueId = null;
+    let currentSpecIssueIdentifier = null;
+    let currentImprovedSpec = null;
+
+    function improveSpecFromCard(btn) {
+      const card = btn.closest('.issue-card');
+      const issueId = card.dataset.issueId;
+      const identifier = card.dataset.issueIdentifier;
+      const title = card.dataset.issueTitle;
+      const currentSpec = card.dataset.issueDesc;
+      improveSpec(issueId, identifier, title, currentSpec, btn);
+    }
+
+    function improveSpecFromRow(btn) {
+      const row = btn.closest('tr');
+      const issueId = row.dataset.linearId;
+      const identifier = row.dataset.issueIdentifier;
+      const title = row.dataset.issueTitle;
+      const currentSpec = row.dataset.issueDesc;
+      improveSpec(issueId, identifier, title, currentSpec, btn);
+    }
+
+    function showFullDescription(issueId) {
+      const row = document.querySelector(\`tr[data-issue-id="\${issueId}"]\`);
+      if (!row) return;
+
+      const identifier = row.dataset.issueIdentifier;
+      const title = row.dataset.issueTitle;
+      const description = row.dataset.issueDesc;
+
+      document.getElementById('descModalIdentifier').textContent = identifier;
+      document.getElementById('descModalTitle').textContent = title;
+      document.getElementById('descModalContent').textContent = description || 'No description available.';
+      document.getElementById('descriptionModal').style.display = 'block';
+    }
+
+    function closeDescriptionModal() {
+      document.getElementById('descriptionModal').style.display = 'none';
+    }
+
+    async function improveSpecForWorktree(ticketId, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Loading...';
+
+      try {
+        // Fetch the issue by identifier
+        const res = await fetch(\`/api/linear/issue?identifier=\${encodeURIComponent(ticketId)}\`);
+        const data = await res.json();
+
+        if (!data.ok || !data.issue) {
+          throw new Error(data.error || 'Issue not found');
+        }
+
+        const issue = data.issue;
+        btn.textContent = originalText;
+        btn.disabled = false;
+
+        // Now call improveSpec with the fetched data
+        improveSpec(issue.id, issue.identifier, issue.title, issue.description || '', btn);
+      } catch (err) {
+        btn.textContent = originalText;
+        btn.disabled = false;
+        alert('Error loading issue: ' + err.message);
+      }
+    }
+
+    async function improveSpec(issueId, identifier, title, currentSpec, btn) {
+      if (!btn) btn = document.getElementById(\`improve-\${issueId}\`);
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '⏳ Generating...';
+
+      // Animate the button to show progress
+      let dots = 0;
+      const animateInterval = setInterval(() => {
+        dots = (dots + 1) % 4;
+        btn.textContent = '⏳ Generating' + '.'.repeat(dots);
+      }, 500);
+
+      try {
+        // Use AbortController with 5 minute timeout (Claude can take a while)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
+        const res = await fetch('/api/improve-spec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            issueId,
+            issueIdentifier: identifier,
+            title,
+            currentSpec
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+        clearInterval(animateInterval);
+
+        const data = await res.json();
+
+        if (!data.ok) {
+          throw new Error(data.error || 'Failed to improve spec');
+        }
+
+        // Store for approval
+        currentSpecIssueId = issueId;
+        currentSpecIssueIdentifier = identifier;
+        currentImprovedSpec = data.improvedSpec;
+
+        // Show approval modal
+        document.getElementById('specIssueIdentifier').textContent = identifier;
+        document.getElementById('specApprovalContent').textContent = data.improvedSpec;
+        document.getElementById('specApprovalModal').style.display = 'block';
+
+        btn.textContent = originalText;
+        btn.disabled = false;
+      } catch (err) {
+        clearInterval(animateInterval);
+        const errorMsg = err.name === 'AbortError' ? 'Request timed out (5 min limit)' : err.message;
+        alert('Error improving spec: ' + errorMsg);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    function closeSpecApprovalModal() {
+      document.getElementById('specApprovalModal').style.display = 'none';
+      currentSpecIssueId = null;
+      currentSpecIssueIdentifier = null;
+      currentImprovedSpec = null;
+      // Reset approve button state
+      const btn = document.getElementById('approveSpecBtn');
+      btn.disabled = false;
+      btn.textContent = '✅ Approve & Update Linear';
+    }
+
+    function rejectSpec() {
+      closeSpecApprovalModal();
+    }
+
+    async function approveSpec() {
+      if (!currentSpecIssueId || !currentImprovedSpec) {
+        alert('No spec to approve');
+        return;
+      }
+
+      const btn = document.getElementById('approveSpecBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Updating...';
+
+      try {
+        const res = await fetch('/api/apply-spec', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            issueId: currentSpecIssueId,
+            issueIdentifier: currentSpecIssueIdentifier,
+            newSpec: currentImprovedSpec
+          })
+        });
+
+        const data = await res.json();
+
+        if (!data.ok) {
+          throw new Error(data.error || 'Failed to update spec');
+        }
+
+        alert(\`✅ Spec updated for \${data.issue.identifier}!\`);
+        closeSpecApprovalModal();
+
+        // Refresh backlog to show updated description
+        showBacklogIssues();
+      } catch (err) {
+        alert('Error updating spec: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = '✅ Approve & Update Linear';
+      }
     }
 
     async function assignIssue(issueId, identifier) {
@@ -1721,6 +2240,9 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       const unassignedModal = document.getElementById('unassignedModal');
       const autopilotModal = document.getElementById('autopilotModal');
       const issuesDiffModal = document.getElementById('issuesDiffModal');
+      const backlogModal = document.getElementById('backlogModal');
+      const specApprovalModal = document.getElementById('specApprovalModal');
+      const descriptionModal = document.getElementById('descriptionModal');
       if (event.target === unassignedModal) {
         closeUnassignedModal();
       }
@@ -1729,6 +2251,15 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       }
       if (event.target === issuesDiffModal) {
         closeIssuesDiffModal();
+      }
+      if (event.target === backlogModal) {
+        closeBacklogModal();
+      }
+      if (event.target === specApprovalModal) {
+        closeSpecApprovalModal();
+      }
+      if (event.target === descriptionModal) {
+        closeDescriptionModal();
       }
     }
 

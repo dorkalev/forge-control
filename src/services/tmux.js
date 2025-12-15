@@ -36,10 +36,15 @@ export async function killSession(sessionName) {
 }
 
 export async function createClaudeSession(branch, directoryPath, title = null, ticketId = null, initialPrompt = null) {
-  // Extract ticket ID from branch
-  const ticketMatch = branch.match(/^([A-Z]+-\d+)/);
-  const baseSessionName = ticketMatch ? ticketMatch[1] : branch;
-  const sessionName = `${baseSessionName}-claude`;
+  // Use the folder name from the directory path as session base (unique per worktree)
+  const folderName = path.basename(directoryPath);
+  // Sanitize for tmux session name (replace invalid chars with -)
+  const sanitizedFolderName = folderName.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const sessionName = `${sanitizedFolderName}-claude`;
+
+  // Extract ticket ID from branch for display purposes
+  const ticketMatch = branch.match(/^([A-Z]+-\d+)/i);
+  const baseSessionName = ticketMatch ? ticketMatch[1].toUpperCase() : branch;
 
   // Create window title
   const windowTitle = ticketId && title ? `${ticketId} - ${title}` : baseSessionName;
@@ -89,10 +94,15 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
 }
 
 export async function createCodexSession(branch, directoryPath, title = null, ticketId = null, initialPrompt = null) {
-  // Extract ticket ID from branch
-  const ticketMatch = branch.match(/^([A-Z]+-\d+)/);
-  const baseSessionName = ticketMatch ? ticketMatch[1] : branch;
-  const sessionName = `${baseSessionName}-codex`;
+  // Use the folder name from the directory path as session base (unique per worktree)
+  const folderName = path.basename(directoryPath);
+  // Sanitize for tmux session name (replace invalid chars with -)
+  const sanitizedFolderName = folderName.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const sessionName = `${sanitizedFolderName}-codex`;
+
+  // Extract ticket ID from branch for display purposes
+  const ticketMatch = branch.match(/^([A-Z]+-\d+)/i);
+  const baseSessionName = ticketMatch ? ticketMatch[1].toUpperCase() : branch;
 
   // Create window title
   const windowTitle = ticketId && title ? `${ticketId} - ${title}` : baseSessionName;

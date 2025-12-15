@@ -7,13 +7,14 @@ import { handleWorktree } from '../handlers/worktree.js';
 import { handleFolderStatus } from '../handlers/status.js';
 import { handleRoot } from '../handlers/root.js';
 import { handleReleaseNotify } from '../handlers/releases.js';
-import { handleGetUnassignedIssues, handleAssignIssue, handleGetUsers, handleGetProjectUrl } from '../handlers/linear.js';
+import { handleGetUnassignedIssues, handleAssignIssue, handleGetUsers, handleGetProjectUrl, handleGetBacklogIssues, handleGetIssueByIdentifier } from '../handlers/linear.js';
 import { handleAutopilotStart, handleAutopilotStop, handleAutopilotStatus, handleAutopilotSetMax } from '../handlers/autopilot.js';
 import { handleRenderStatus } from '../handlers/render.js';
 import { handleIssuesDiff, handleGenerateChangelog } from '../handlers/issues-diff.js';
 import { handleCreateBranch, handleBranchExists, handleCreatePROnly } from '../handlers/branch.js';
 import { handleListProjects, handleSetActiveProject, handleScanProjects } from '../handlers/projects.js';
-import { handleUpdateIssueFromLinear } from '../handlers/sync.js';
+import { handleUpdateIssueFromLinear, handleUploadIssueToLinear, handleIssueDiff } from '../handlers/sync.js';
+import { handleImproveSpec, handleApplySpec } from '../handlers/improve-spec.js';
 import { respond } from '../utils/http.js';
 import { PORT, REPO_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
 import { getProjectContextSync } from '../services/projects.js';
@@ -66,6 +67,14 @@ export async function routeRequest(req, res, pathname, query) {
 
     if (pathname === '/api/linear/project-url') {
       return await handleGetProjectUrl(req, res, query);
+    }
+
+    if (pathname === '/api/linear/backlog-issues') {
+      return await handleGetBacklogIssues(req, res, query);
+    }
+
+    if (pathname === '/api/linear/issue') {
+      return await handleGetIssueByIdentifier(req, res, query);
     }
 
     if (pathname === '/api/autopilot/status') {
@@ -181,6 +190,22 @@ export async function routeRequest(req, res, pathname, query) {
 
     if (pathname === '/api/update-issue-from-linear') {
       return await handleUpdateIssueFromLinear(req, res);
+    }
+
+    if (pathname === '/api/upload-issue-to-linear') {
+      return await handleUploadIssueToLinear(req, res);
+    }
+
+    if (pathname === '/api/issue-diff') {
+      return await handleIssueDiff(req, res);
+    }
+
+    if (pathname === '/api/improve-spec') {
+      return await handleImproveSpec(req, res);
+    }
+
+    if (pathname === '/api/apply-spec') {
+      return await handleApplySpec(req, res);
     }
   }
 

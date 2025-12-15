@@ -58,15 +58,16 @@ export async function readIssueDescription(worktreePath) {
     const mdFiles = files.filter(f => f.endsWith('.md'));
     if (mdFiles.length === 0) return null;
 
-    // Extract ticket ID from worktree path (e.g., "A-228" from "A-228-communicate-new-features...")
+    // Extract ticket ID from worktree path (e.g., "bol-31" from "bol-31-communicate-new-features...")
     const folderName = path.basename(worktreePath);
-    const ticketIdMatch = folderName.match(/^([A-Z]+-\d+)/);
-    const ticketId = ticketIdMatch ? ticketIdMatch[1] : null;
+    const ticketIdMatch = folderName.match(/^([A-Za-z]+-\d+)/i);
+    const ticketId = ticketIdMatch ? ticketIdMatch[1].toUpperCase() : null;
 
     // Try to find the matching issue file, fall back to first .md file
     let mdFile;
     if (ticketId) {
-      mdFile = mdFiles.find(f => f.startsWith(ticketId)) || mdFiles[0];
+      // Match case-insensitively since folder might be lowercase but file might be uppercase
+      mdFile = mdFiles.find(f => f.toUpperCase().startsWith(ticketId)) || mdFiles[0];
     } else {
       mdFile = mdFiles[0];
     }

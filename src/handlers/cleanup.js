@@ -4,7 +4,7 @@ import { exists } from '../services/worktree.js';
 import { getPullRequestsForBranch } from '../services/github.js';
 import { moveIssueToDone } from '../services/linear.js';
 import { REPO_PATH, WORKTREE_REPO_PATH, LINEAR_API_KEY } from '../config/env.js';
-import { getProjectContextSync } from '../services/projects.js';
+import { getProjectContextSync, getActiveProjectEnv } from '../services/projects.js';
 
 export async function handleCleanupBranch(req, res) {
   if (req.method !== 'POST') {
@@ -40,8 +40,11 @@ export async function handleCleanupBranch(req, res) {
         return respond(res, 400, { ok: false, error: `Worktree directory does not exist: ${directoryPath}` });
       }
 
+      // Get project env for GitHub token
+      const projectEnv = await getActiveProjectEnv();
+
       // Run pre-flight checks
-      const checkResult = await runPreflightChecks(branch, directoryPath, cwd);
+      const checkResult = await runPreflightChecks(branch, directoryPath, cwd, projectEnv);
       if (!checkResult.ok) {
         return respond(res, checkResult.status, { ok: false, error: checkResult.error, warnings: checkResult.warnings });
       }
@@ -87,13 +90,18 @@ export async function handleCleanupBranch(req, res) {
   });
 }
 
-async function runPreflightChecks(branch, directoryPath, cwd) {
+async function runPreflightChecks(branch, directoryPath, cwd, projectEnv) {
   const warnings = [];
 
   // Check PR merge status
   try {
     console.log(`📡 Checking GitHub PR merge status for ${branch}...`);
-    const prs = await getPullRequestsForBranch(branch);
+    const ctx = getProjectContextSync();
+    const prs = await getPullRequestsForBranch(branch, 'all', {
+      owner: ctx?.GITHUB_REPO_OWNER || projectEnv?.GITHUB_REPO_OWNER,
+      repo: ctx?.GITHUB_REPO_NAME || projectEnv?.GITHUB_REPO_NAME,
+      token: projectEnv?.GITHUB_TOKEN
+    });
     const mergedPR = prs.find(pr => pr.merged_at);
 
     if (!mergedPR) {

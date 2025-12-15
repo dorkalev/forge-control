@@ -104,27 +104,58 @@ export async function handleFolderStatus(req, res, query) {
           const localContent = fs.readFileSync(issueFilePath, 'utf8');
           const linearDescription = result.linear.description || '';
 
-          // Normalize for comparison (trim whitespace, normalize line endings)
-          const normalizeText = (text) => (text || '').trim().replace(/\r\n/g, '\n');
+          // Normalize for comparison (trim whitespace, normalize line endings, normalize bullets, collapse whitespace)
+          const normalizeText = (text) => (text || '')
+            .trim()
+            .replace(/\r\n/g, '\n')
+            .replace(/^\* /gm, '- ')      // Convert * bullets to -
+            .replace(/:\n+/g, ':\n')      // Remove blank lines after colons
+            .replace(/\n\n+/g, '\n');     // Collapse all blank lines to single newline
 
-          // Check if local file contains the Linear description
-          const localNormalized = normalizeText(localContent);
+          // Extract just the description section from local file
+          // The description section contains the actual spec content (may have its own ## headers)
+          // It ends at --- or <!-- Local notes
+          const extractLocalDescription = (content) => {
+            const lines = content.split('\n');
+            let inDescription = false;
+            let desc = [];
+            for (const line of lines) {
+              if (line.startsWith('## Description')) {
+                inDescription = true;
+                continue;
+              }
+              if (inDescription) {
+                // Stop at separator or local notes section
+                if (line.startsWith('---') || line.startsWith('<!-- Local notes')) break;
+                desc.push(line);
+              }
+            }
+            return desc.join('\n').trim();
+          };
+
+          const localDescription = extractLocalDescription(localContent);
           const linearNormalized = normalizeText(linearDescription);
+          const localNormalized = normalizeText(localDescription);
 
-          // Simple check: does local file contain Linear description?
-          const descriptionsMatch = localNormalized.includes(linearNormalized) || linearNormalized === '';
+          // Check if descriptions differ
+          const descriptionsMatch = localNormalized === linearNormalized;
 
           if (!descriptionsMatch) {
             // Check if local file has uncommitted changes
             const hasLocalChanges = await hasUncommittedChangesForFile(worktreePath, `issues/${linearId}.md`);
 
+            // Determine sync direction
+            const linearHasContent = linearNormalized.length > 0;
+            const localHasContent = localNormalized.length > 0 && localNormalized !== '_No description provided._';
+
             result.issueSync = {
-              hasUpdate: true,
-              hasConflict: hasLocalChanges,
+              hasUpdate: linearHasContent,      // Linear has something to download
+              hasLocalUpdate: localHasContent,  // Local has something to upload
+              hasConflict: linearHasContent && localHasContent && hasLocalChanges,
               issueFile: `issues/${linearId}.md`
             };
 
-            console.log(`🔄 Issue sync: ${linearId} - hasUpdate: true, hasConflict: ${hasLocalChanges}`);
+            console.log(`🔄 Issue sync: ${linearId} - linearHasContent: ${linearHasContent}, localHasContent: ${localHasContent}, hasLocalChanges: ${hasLocalChanges}`);
           }
         }
       } catch (err) {
