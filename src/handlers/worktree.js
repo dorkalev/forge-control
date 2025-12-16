@@ -2,6 +2,7 @@ import { respond, respondHtml } from '../utils/http.js';
 import { createWorktree } from '../services/worktree.js';
 import { REPO_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
 import { getProjectContextSync } from '../services/projects.js';
+import { getIssueByBranchName, moveIssueToInProgress } from '../services/linear.js';
 
 export async function handleWorktree(req, res, query) {
   const accept = (req.headers['accept'] || '').toString();
@@ -72,6 +73,20 @@ export async function handleWorktree(req, res, query) {
 
   try {
     const result = await createWorktree(branch);
+
+    // Move ticket to In Progress if worktree was created successfully
+    if (result.ok && !result.existed) {
+      try {
+        const issue = await getIssueByBranchName(branch);
+        if (issue?.id) {
+          await moveIssueToInProgress(issue.id);
+          console.log(`📋 Moved ${issue.identifier} to In Progress`);
+        }
+      } catch (linearErr) {
+        console.log(`⚠️ Could not move ticket to In Progress: ${linearErr.message}`);
+      }
+    }
+
     const status = result.ok ? 200 : 500;
     return render(status, result);
   } catch (err) {

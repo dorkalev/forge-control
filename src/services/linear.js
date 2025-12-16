@@ -158,6 +158,18 @@ export async function updateIssueState(issueId, stateId) {
   return data.data.issueUpdate.issue;
 }
 
+export async function moveIssueToInProgress(issueId) {
+  const states = await getWorkflowStates();
+  const inProgressState = states.find(s => s.name.toLowerCase() === 'in progress')
+    || states.find(s => s.type === 'started');
+
+  if (!inProgressState) {
+    throw new Error('Could not find "In Progress" workflow state in Linear');
+  }
+
+  return updateIssueState(issueId, inProgressState.id);
+}
+
 export async function moveIssueToInReview(issueId) {
   const states = await getWorkflowStates();
   const inReviewState = states.find(s => s.name.toLowerCase() === 'in review');
