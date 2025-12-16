@@ -35,6 +35,14 @@ export async function killSession(sessionName) {
   return runCommand('tmux', ['kill-session', '-t', sessionName]);
 }
 
+async function upgradeClaudeCode() {
+  console.log('🔄 Checking for claude-code updates...');
+  const result = await runCommand('brew', ['upgrade', 'claude-code', '--quiet']);
+  if (result.code === 0 && result.stdout?.trim()) {
+    console.log('✅ claude-code upgraded');
+  }
+}
+
 export async function createClaudeSession(branch, directoryPath, title = null, ticketId = null, initialPrompt = null) {
   // Use the folder name from the directory path as session base (unique per worktree)
   const folderName = path.basename(directoryPath);
@@ -61,6 +69,9 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
     }
     return { sessionName, windowTitle, created: false };
   }
+
+  // Upgrade claude-code before creating new session
+  await upgradeClaudeCode();
 
   // Create new session
   console.log(`📦 Creating tmux session: ${sessionName}`);
