@@ -1267,19 +1267,16 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
           if (data.issueSync) {
             const linearId = (folder.match(/([A-Za-z]+-\\d+)/i)?.[0] || '').toUpperCase();
             if (data.issueSync.hasConflict) {
-              // Both have content and they differ - show conflict with both buttons
+              // Both have content and they differ - show conflict diff button with upload/download
               html += \`<span class="status-badge status-conflict" onclick="showIssueDiff('\${worktreePath}', '\${linearId}')" title="Click to see diff between local and Linear">⚠️ Conflict</span>\`;
               html += \`<button class="sync-btn sync-upload" onclick="event.stopPropagation(); uploadIssueToLinear('\${worktreePath}', '\${linearId}')" title="Upload local changes to Linear">↑</button>\`;
               html += \`<button class="sync-btn sync-download" onclick="event.stopPropagation(); updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Download from Linear (overwrite local)">↓</button>\`;
             } else if (data.issueSync.hasLocalUpdate && !data.issueSync.hasUpdate) {
-              // Only local has content - show upload option
-              html += \`<span class="status-badge status-upload" onclick="uploadIssueToLinear('\${worktreePath}', '\${linearId}')" title="Local has description not in Linear - click to upload">⬆️ Push to Linear</span>\`;
+              // Only local has content - show upload button
+              html += \`<button class="sync-btn sync-upload" onclick="event.stopPropagation(); uploadIssueToLinear('\${worktreePath}', '\${linearId}')" title="Local has description not in Linear - click to upload">↑</button>\`;
             } else if (data.issueSync.hasUpdate && !data.issueSync.hasLocalUpdate) {
-              // Only Linear has content - show download option
-              html += \`<span class="status-badge status-sync" onclick="updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Linear description has changed - click to update local file">⬇️ Pull from Linear</span>\`;
-            } else if (data.issueSync.hasUpdate) {
-              // Both have content but no uncommitted local changes - show download option
-              html += \`<span class="status-badge status-sync" onclick="updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Linear description differs - click to update local file">🔄 Sync from Linear</span>\`;
+              // Only Linear has content - show download button
+              html += \`<button class="sync-btn sync-download" onclick="event.stopPropagation(); updateIssueFromLinear('\${worktreePath}', '\${linearId}')" title="Linear has description - click to download">↓</button>\`;
             }
           }
 

@@ -87,35 +87,35 @@ function generateIssueFileContent(issue) {
 }
 
 /**
- * Extract description from local issue file
- * Parses the markdown and returns the Description section content
- * The description may contain its own ## headers (like ## Overview), so we only
- * stop at --- separator or <!-- Local notes comment
+ * Extract content from local issue file (everything after metadata header)
+ * Metadata ends after **URL:** line, content starts at next section
+ * Content ends at <!-- Local notes comment marker
  */
 function extractDescriptionFromIssueFile(content) {
   const lines = content.split('\n');
-  let inDescription = false;
+  let inContent = false;
   let description = [];
 
   for (const line of lines) {
-    if (line.startsWith('## Description')) {
-      inDescription = true;
+    // Start capturing after the URL metadata line
+    if (line.startsWith('**URL:**')) {
+      inContent = true;
       continue;
     }
-    if (inDescription) {
-      // Stop at separator or local notes section (not at ## headers which are part of content)
-      if (line.startsWith('---') || line.startsWith('<!-- Local notes')) {
+    if (inContent) {
+      // Stop at local notes section marker
+      if (line.startsWith('<!-- Local notes')) {
         break;
       }
       description.push(line);
     }
   }
 
-  // Trim leading/trailing empty lines
-  while (description.length > 0 && description[0].trim() === '') {
+  // Trim leading/trailing empty lines and --- separators
+  while (description.length > 0 && (description[0].trim() === '' || description[0].trim() === '---')) {
     description.shift();
   }
-  while (description.length > 0 && description[description.length - 1].trim() === '') {
+  while (description.length > 0 && (description[description.length - 1].trim() === '' || description[description.length - 1].trim() === '---')) {
     description.pop();
   }
 
@@ -224,6 +224,23 @@ export async function handleIssueDiff(req, res) {
 
       const linearDescription = issue.description || '';
 
+      // Normalize markdown formatting (Linear mangles it)
+      const normalizeForDiff = (text) => (text || '')
+        .trim()
+        .replace(/\r\n/g, '\n')                         // Normalize line endings
+        .replace(/^\* /gm, '- ')                        // Convert * bullets to -
+        .replace(/\\\./g, '.')                          // Remove escaped periods (1\. -> 1.)
+        .replace(/^\|[\s-]+\|[\s-|]+$/gm, (line) => {   // Normalize table separator rows
+          const cols = line.split('|').filter(c => c.trim() !== '');
+          return '|' + cols.map(() => '---').join('|') + '|';
+        })
+        .replace(/\*\*([^*]+):\*\*\n\n(?=[-*])/g, '**$1:**\n')  // Remove blank line after bold headers before lists
+        .replace(/\n{3,}/g, '\n\n')                     // Collapse 3+ newlines to 2
+        .replace(/[ \t]+$/gm, '');                      // Remove trailing whitespace per line
+
+      const normalizedLocal = normalizeForDiff(localDescription);
+      const normalizedLinear = normalizeForDiff(linearDescription);
+
       // Create temp files for diff (use .md extension for better Meld compatibility)
       const tmpDir = '/tmp/forge-diff';
       if (!fs.existsSync(tmpDir)) {
@@ -233,8 +250,8 @@ export async function handleIssueDiff(req, res) {
       const localFile = path.join(tmpDir, `${issueId}-local.md`);
       const linearFile = path.join(tmpDir, `${issueId}-linear.md`);
 
-      fs.writeFileSync(localFile, localDescription, 'utf8');
-      fs.writeFileSync(linearFile, linearDescription, 'utf8');
+      fs.writeFileSync(localFile, normalizedLocal, 'utf8');
+      fs.writeFileSync(linearFile, normalizedLinear, 'utf8');
 
       // Open diff in Meld - call meld directly instead of using open -a
       console.log(`📂 Opening diff: ${linearFile} vs ${localFile}`);

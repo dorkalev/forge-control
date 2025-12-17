@@ -4,7 +4,7 @@ import { respond } from '../utils/http.js';
 import { getIssue, getIssueByBranchName } from '../services/linear.js';
 import { getBranchNameFromPath, resolveWorktreeBaseDir } from '../services/worktree.js';
 import { getPullRequestsForBranch, getPullRequest, getReviewThreads, getCheckRuns, getTags, isConfigured as isGithubConfigured } from '../services/github.js';
-import { hasUncommittedOrUnpushedChanges, hasUncommittedChangesForFile } from '../services/git.js';
+import { hasUncommittedOrUnpushedChanges } from '../services/git.js';
 import { LINEAR_API_KEY, GITHUB_REPO_OWNER, GITHUB_REPO_NAME, WORKTREE_BASE_PATH, REPO_PATH } from '../config/env.js';
 import { getProjectContextSync, getActiveProjectEnv } from '../services/projects.js';
 
@@ -104,31 +104,41 @@ export async function handleFolderStatus(req, res, query) {
           const localContent = fs.readFileSync(issueFilePath, 'utf8');
           const linearDescription = result.linear.description || '';
 
-          // Normalize for comparison (trim whitespace, normalize line endings, normalize bullets, collapse whitespace)
+          // Normalize markdown for comparison (Linear mangles formatting)
           const normalizeText = (text) => (text || '')
             .trim()
             .replace(/\r\n/g, '\n')
-            .replace(/^\* /gm, '- ')      // Convert * bullets to -
-            .replace(/:\n+/g, ':\n')      // Remove blank lines after colons
-            .replace(/\n\n+/g, '\n');     // Collapse all blank lines to single newline
+            .replace(/^\* /gm, '- ')                        // Convert * bullets to -
+            .replace(/\\\./g, '.')                          // Remove escaped periods (1\. -> 1.)
+            .replace(/^\|[\s-]+\|[\s-|]+$/gm, '|---|---|')  // Normalize table separators
+            .replace(/\*\*([^*]+):\*\*\n\n(?=[-*])/g, '**$1:**\n')  // Remove blank after bold headers
+            .replace(/\n\n+/g, '\n');                       // Collapse all blank lines
 
-          // Extract just the description section from local file
-          // The description section contains the actual spec content (may have its own ## headers)
-          // It ends at --- or <!-- Local notes
+          // Extract the content section from local file (everything after metadata header)
+          // Metadata ends after **URL:** line, content starts at next ## header or ---
+          // Content ends at <!-- Local notes marker
           const extractLocalDescription = (content) => {
             const lines = content.split('\n');
-            let inDescription = false;
+            let inContent = false;
             let desc = [];
             for (const line of lines) {
-              if (line.startsWith('## Description')) {
-                inDescription = true;
+              // Start capturing after the URL metadata line
+              if (line.startsWith('**URL:**')) {
+                inContent = true;
                 continue;
               }
-              if (inDescription) {
-                // Stop at separator or local notes section
-                if (line.startsWith('---') || line.startsWith('<!-- Local notes')) break;
+              if (inContent) {
+                // Stop at local notes section marker
+                if (line.startsWith('<!-- Local notes')) break;
                 desc.push(line);
               }
+            }
+            // Remove leading/trailing empty lines and --- separators
+            while (desc.length > 0 && (desc[0].trim() === '' || desc[0].trim() === '---')) {
+              desc.shift();
+            }
+            while (desc.length > 0 && (desc[desc.length - 1].trim() === '' || desc[desc.length - 1].trim() === '---')) {
+              desc.pop();
             }
             return desc.join('\n').trim();
           };
@@ -141,21 +151,21 @@ export async function handleFolderStatus(req, res, query) {
           const descriptionsMatch = localNormalized === linearNormalized;
 
           if (!descriptionsMatch) {
-            // Check if local file has uncommitted changes
-            const hasLocalChanges = await hasUncommittedChangesForFile(worktreePath, `issues/${linearId}.md`);
-
             // Determine sync direction
             const linearHasContent = linearNormalized.length > 0;
             const localHasContent = localNormalized.length > 0 && localNormalized !== '_No description provided._';
 
+            // Conflict = both have content and they differ
+            const hasConflict = linearHasContent && localHasContent;
+
             result.issueSync = {
               hasUpdate: linearHasContent,      // Linear has something to download
               hasLocalUpdate: localHasContent,  // Local has something to upload
-              hasConflict: linearHasContent && localHasContent && hasLocalChanges,
+              hasConflict,
               issueFile: `issues/${linearId}.md`
             };
 
-            console.log(`🔄 Issue sync: ${linearId} - linearHasContent: ${linearHasContent}, localHasContent: ${localHasContent}, hasLocalChanges: ${hasLocalChanges}`);
+            console.log(`🔄 Issue sync: ${linearId} - linearHasContent: ${linearHasContent}, localHasContent: ${localHasContent}, hasConflict: ${hasConflict}`);
           }
         }
       } catch (err) {
