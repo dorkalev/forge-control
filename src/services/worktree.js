@@ -217,6 +217,7 @@ export async function createWorktree(branch) {
   // Copy .env file and .claude directory to the new worktree if successful
   if (ok) {
     await copyWorktreeFiles(worktreePath, worktreeRepoPath, results);
+    await initSubmodules(worktreePath, results);
   }
 
   return {
@@ -278,5 +279,29 @@ async function copyWorktreeFiles(worktreePath, worktreeRepoPath, results) {
       console.error(`⚠️  Failed to symlink .forge: ${err.message}`);
       results.push({ step: 'symlink-forge', code: 1, error: err.message });
     }
+  }
+}
+
+/**
+ * Initialize git submodules in the worktree
+ */
+async function initSubmodules(worktreePath, results) {
+  // Check if there are any submodules
+  const gitmodulesPath = path.join(worktreePath, '.gitmodules');
+  if (!exists(gitmodulesPath)) {
+    console.log(`ℹ️  No .gitmodules found, skipping submodule init`);
+    return;
+  }
+
+  console.log(`📦 Initializing submodules in ${worktreePath}...`);
+
+  // Initialize and update submodules (non-recursive to avoid issues with nested submodules)
+  const submoduleInit = await runCommand('git', ['submodule', 'update', '--init'], { cwd: worktreePath });
+  results.push({ step: 'submodule-init', ...submoduleInit });
+
+  if (submoduleInit.code === 0) {
+    console.log(`✅ Submodules initialized successfully`);
+  } else {
+    console.error(`⚠️  Submodule init had issues: ${submoduleInit.stderr || submoduleInit.stdout}`);
   }
 }
