@@ -141,10 +141,12 @@ export async function handleCreateBranch(req, res) {
       });
     }
 
-    // Load project-specific env vars
+    // Load project-specific env vars (these override cached config)
     const projectEnv = await getActiveProjectEnv();
     const linearApiKey = projectEnv?.LINEAR_APP || null;
     const githubToken = projectEnv?.GITHUB_TOKEN || null;
+    const githubOwner = projectEnv?.GITHUB_REPO_OWNER || config.githubOwner;
+    const githubRepo = projectEnv?.GITHUB_REPO_NAME || config.githubRepo;
 
     console.log(`🌿 [Branch] Creating branch for ${issueIdentifier}...`);
 
@@ -241,8 +243,8 @@ ${issue.description || 'No description provided'}
 **Linear Issue:** ${issue.url}`;
 
     const pr = await github.createPullRequest({
-      owner: config.githubOwner,
-      repo: config.githubRepo,
+      owner: githubOwner,
+      repo: githubRepo,
       title: `${issueIdentifier}: ${issue.title}`,
       head: branchName,
       base: STAGING_BRANCH,
@@ -361,10 +363,12 @@ export async function handleCreatePROnly(req, res) {
       });
     }
 
-    // Load project-specific env vars
+    // Load project-specific env vars (these override cached config)
     const projectEnv = await getActiveProjectEnv();
     const linearApiKey = projectEnv?.LINEAR_APP || null;
     const githubToken = projectEnv?.GITHUB_TOKEN || null;
+    const githubOwner = projectEnv?.GITHUB_REPO_OWNER || config.githubOwner;
+    const githubRepo = projectEnv?.GITHUB_REPO_NAME || config.githubRepo;
 
     console.log(`📝 [Branch] Creating PR for existing branch: ${branchName}`);
 
@@ -423,9 +427,9 @@ export async function handleCreatePROnly(req, res) {
 
     // Create draft PR using GitHub API
     console.log('📝 [Branch] Creating draft PR...');
-    console.log(`   Owner: ${config.githubOwner}`);
-    console.log(`   Repo: ${config.githubRepo}`);
-    console.log(`   Head: ${config.githubOwner}:${branchName}`);
+    console.log(`   Owner: ${githubOwner}`);
+    console.log(`   Repo: ${githubRepo}`);
+    console.log(`   Head: ${githubOwner}:${branchName}`);
     console.log(`   Base: ${STAGING_BRANCH}`);
 
     const prBody = `Fixes ${issueIdentifier}
@@ -435,8 +439,8 @@ ${issue.description || 'No description provided'}
 **Linear Issue:** ${issue.url}`;
 
     const pr = await github.createPullRequest({
-      owner: config.githubOwner,
-      repo: config.githubRepo,
+      owner: githubOwner,
+      repo: githubRepo,
       title: `${issueIdentifier}: ${issue.title}`,
       head: branchName,
       base: STAGING_BRANCH,
