@@ -8,7 +8,7 @@ import { getUserAssignedIssues } from '../services/linear.js';
 import { renderRootPage } from '../views/root.js';
 import { WORKTREE_REPO_PATH, LOCAL_DEV_URL, LINEAR_API_KEY, LINEAR_USERNAME } from '../config/env.js';
 import { getProjectContextSync, listProjects, getActiveProject, getActiveProjectEnv, getLinearProjectNames } from '../services/projects.js';
-import { checkMeldInstalled, checkTmuxInstalled, checkClaudeInstalled } from './open.js';
+import { checkMeldInstalled, checkTmuxInstalled, checkClaudeInstalled, checkItermInstalled } from './open.js';
 
 export async function handleRoot(req, res) {
   const accept = (req.headers['accept'] || '').toString();
@@ -270,12 +270,13 @@ LOCAL_AGENT_PORT=4665
     const tmuxSessions = await getTmuxSessions(worktrees);
 
     // Check tool installations in parallel
-    const [meldInstalled, tmuxInstalled, claudeInstalled] = await Promise.all([
+    const [meldInstalled, tmuxInstalled, claudeInstalled, itermInstalled] = await Promise.all([
       checkMeldInstalled(),
       checkTmuxInstalled(),
-      checkClaudeInstalled()
+      checkClaudeInstalled(),
+      checkItermInstalled()
     ]);
-    const toolStatus = { meldInstalled, tmuxInstalled, claudeInstalled };
+    const toolStatus = { meldInstalled, tmuxInstalled, claudeInstalled, itermInstalled };
 
     // Render HTML
     const dashboardUrls = {

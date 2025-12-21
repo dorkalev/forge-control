@@ -151,3 +151,11 @@ export async function checkClaudeInstalled() {
   const r = await runCommand('which', ['claude']);
   return r.code === 0;
 }
+
+/**
+ * Check if iTerm2 is installed
+ */
+export async function checkItermInstalled() {
+  const r = await runCommand('test', ['-d', '/Applications/iTerm.app']);
+  return r.code === 0;
+}

@@ -39,7 +39,7 @@ function getProjectDisplayName(projectName) {
 }
 
 export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, localDevUrl = 'http://localhost:8001', dashboardUrls = {}, projects = [], activeProject = null, toolStatus = {}, linearProjectNames = []) {
-  const { meldInstalled = true, tmuxInstalled = true, claudeInstalled = true } = toolStatus;
+  const { meldInstalled = true, tmuxInstalled = true, claudeInstalled = true, itermInstalled = true } = toolStatus;
 
   // Linear project names for multi-project support (JSON stringified for frontend)
   const linearProjectNamesJson = JSON.stringify(linearProjectNames);
@@ -935,12 +935,13 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       </div>
     </div>
 
-    ${(!meldInstalled || !tmuxInstalled || !claudeInstalled) ? `
+    ${(!meldInstalled || !tmuxInstalled || !claudeInstalled || !itermInstalled) ? `
     <div class="warning-banner" id="toolWarnings">
       <div class="warning-banner-content">
         <span>⚠️</span>
         <div class="warning-list">
           ${!claudeInstalled ? '<div>Claude Code CLI not found. Install from: <a href="https://claude.ai/download" target="_blank" style="color: #fef3c7;">claude.ai/download</a></div>' : ''}
+          ${!itermInstalled ? '<div>iTerm2 not found. Install from: <a href="https://iterm2.com" target="_blank" style="color: #fef3c7;">iterm2.com</a></div>' : ''}
           ${!tmuxInstalled ? '<div>tmux not found. <code>brew install tmux</code></div>' : ''}
           ${!meldInstalled ? '<div>Meld not found. <code>brew install meld</code></div>' : ''}
         </div>
