@@ -1,0 +1,9 @@
+WORKTREE_REPO_PATH=/path/to/your/repo
+WORKTREE_BASE_PATH=/path/to/worktrees
+LINEAR_APP=lin_api_your_linear_api_key
+LINEAR_USERNAME=Your Name
+LOCAL_REPO_PATH=/path/to/your/repo
+GITHUB_TOKEN=github_pat_your_github_token
+GITHUB_REPO_OWNER=your-github-username
+GITHUB_REPO_NAME=your-repo-name
+LINEAR_PROJECT=Your Project Name
