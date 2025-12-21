@@ -10,7 +10,7 @@ async function executeQuery(query, variables = {}, apiKeyOverride = null) {
   const apiKey = apiKeyOverride || LINEAR_API_KEY;
 
   if (!apiKey) {
-    throw new Error('LINEAR_API_KEY not configured');
+    throw new Error('LINEAR_APP not configured');
   }
 
   const response = await fetch(LINEAR_API_URL, {
@@ -253,7 +253,7 @@ export async function updateIssueTitleAndDescription(issueId, title, description
   return data.data.issueUpdate.issue;
 }
 
-export async function getCurrentCycleUnassignedIssues() {
+export async function getCurrentCycleUnassignedIssues(apiKey = null) {
   const query = `
     query {
       cycles(filter: { isActive: { eq: true } }) {
@@ -281,7 +281,7 @@ export async function getCurrentCycleUnassignedIssues() {
     }
   `;
 
-  const data = await executeQuery(query);
+  const data = await executeQuery(query, {}, apiKey);
 
   if (data.errors) {
     throw new Error(data.errors[0]?.message || 'Linear API error');
@@ -303,7 +303,7 @@ export async function getCurrentCycleUnassignedIssues() {
   return allIssues;
 }
 
-export async function assignIssue(issueId, assigneeIds) {
+export async function assignIssue(issueId, assigneeIds, apiKey = null) {
   // assigneeIds can be a single string or an array
   const ids = Array.isArray(assigneeIds) ? assigneeIds : [assigneeIds];
 
@@ -324,7 +324,7 @@ export async function assignIssue(issueId, assigneeIds) {
     }
   `;
 
-  const data = await executeQuery(mutation, { issueId, assigneeId: ids[0] });
+  const data = await executeQuery(mutation, { issueId, assigneeId: ids[0] }, apiKey);
 
   if (data.errors) {
     throw new Error(data.errors[0]?.message || 'Linear API error');
@@ -336,13 +336,13 @@ export async function assignIssue(issueId, assigneeIds) {
 
   // If there are additional assignees, add them as subscribers
   for (let i = 1; i < ids.length; i++) {
-    await addSubscriber(issueId, ids[i]);
+    await addSubscriber(issueId, ids[i], apiKey);
   }
 
   return data.data.issueUpdate.issue;
 }
 
-export async function addSubscriber(issueId, subscriberId) {
+export async function addSubscriber(issueId, subscriberId, apiKey = null) {
   const mutation = `
     mutation IssueAddSubscriber($issueId: String!, $subscriberId: String!) {
       issueUpdate(
@@ -363,7 +363,7 @@ export async function addSubscriber(issueId, subscriberId) {
     }
   `;
 
-  const data = await executeQuery(mutation, { issueId, subscriberId });
+  const data = await executeQuery(mutation, { issueId, subscriberId }, apiKey);
 
   if (data.errors) {
     throw new Error(data.errors[0]?.message || 'Linear API error');

@@ -1,5 +1,7 @@
 import { respond } from '../utils/http.js';
 import * as linear from '../services/linear.js';
+import { getActiveProjectEnv } from '../services/projects.js';
+import { LINEAR_API_KEY } from '../config/env.js';
 
 export async function handleGetUnassignedIssues(req, res) {
   if (req.method !== 'GET') {
@@ -7,7 +9,9 @@ export async function handleGetUnassignedIssues(req, res) {
   }
 
   try {
-    const issues = await linear.getCurrentCycleUnassignedIssues();
+    const projectEnv = await getActiveProjectEnv();
+    const apiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
+    const issues = await linear.getCurrentCycleUnassignedIssues(apiKey);
     return respond(res, 200, { ok: true, issues });
   } catch (err) {
     console.error('Error fetching unassigned issues:', err);
@@ -30,8 +34,11 @@ export async function handleAssignIssue(req, res) {
         return respond(res, 400, { ok: false, error: 'issueId and assigneeIds required' });
       }
 
+      const projectEnv = await getActiveProjectEnv();
+      const apiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
+
       console.log(`📝 Assigning issue ${issueId} to users:`, assigneeIds);
-      const result = await linear.assignIssue(issueId, assigneeIds);
+      const result = await linear.assignIssue(issueId, assigneeIds, apiKey);
 
       console.log(`✅ Issue assigned successfully`);
       return respond(res, 200, { ok: true, issue: result });
@@ -48,7 +55,9 @@ export async function handleGetUsers(req, res) {
   }
 
   try {
-    const users = await linear.getUsers();
+    const projectEnv = await getActiveProjectEnv();
+    const apiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
+    const users = await linear.getUsers(apiKey);
     return respond(res, 200, { ok: true, users });
   } catch (err) {
     console.error('Error fetching users:', err);
@@ -67,7 +76,11 @@ export async function handleGetProjectUrl(req, res, query) {
   }
 
   try {
-    const url = await linear.getProjectUrl(projectName);
+    // Get project-specific API key if available
+    const projectEnv = await getActiveProjectEnv();
+    const apiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
+
+    const url = await linear.getProjectUrl(projectName, apiKey);
     return respond(res, 200, { ok: true, url });
   } catch (err) {
     console.error('Error fetching project URL:', err);
@@ -86,7 +99,9 @@ export async function handleGetIssueByIdentifier(req, res, query) {
   }
 
   try {
-    const issue = await linear.getIssue(identifier);
+    const projectEnv = await getActiveProjectEnv();
+    const apiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
+    const issue = await linear.getIssue(identifier, apiKey);
     if (!issue) {
       return respond(res, 404, { ok: false, error: 'Issue not found' });
     }
@@ -112,7 +127,9 @@ export async function handleGetBacklogIssues(req, res, query) {
   const projectNames = projectsParam.split(',').map(p => p.trim()).filter(p => p);
 
   try {
-    const issues = await linear.getBacklogIssues(projectNames);
+    const projectEnv = await getActiveProjectEnv();
+    const apiKey = projectEnv?.LINEAR_APP || LINEAR_API_KEY;
+    const issues = await linear.getBacklogIssues(projectNames, apiKey);
     return respond(res, 200, { ok: true, issues });
   } catch (err) {
     console.error('Error fetching backlog issues:', err);

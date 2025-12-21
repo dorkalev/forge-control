@@ -125,9 +125,9 @@ export function getLinearProjectNames(projectConfig) {
     return [projectConfig.linearProject];
   }
 
-  // Check for LINEAR_PROJECT in .forge env format
+  // Check for LINEAR_PROJECT in .forge env format (also supports comma-separated)
   if (projectConfig.LINEAR_PROJECT) {
-    return [projectConfig.LINEAR_PROJECT];
+    return parseLinearProjects(projectConfig.LINEAR_PROJECT);
   }
 
   return [];
