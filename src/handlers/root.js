@@ -424,16 +424,21 @@ async function getLinearIssues(existingBranches, activeProject = null, projectEn
     // Filter out issues that already have worktrees
     return issues
       .filter(issue => {
-        // Check Linear's branchName first (if Linear set it)
+        const identifierLower = issue.identifier.toLowerCase();
+
+        // Check if any existing branch starts with the issue identifier
+        for (const branch of existingBranches) {
+          if (branch.toLowerCase().startsWith(identifierLower)) {
+            return false;
+          }
+        }
+
+        // Check Linear's branchName (if Linear set it)
         if (issue.branchName && existingBranches.has(issue.branchName)) {
           return false;
         }
 
-        // Generate parameterized branch name to match what we create
-        const titleSlug = slugify(issue.title);
-        const parameterizedBranch = `${issue.identifier.toLowerCase()}-${titleSlug}`;
-
-        return !existingBranches.has(parameterizedBranch);
+        return true;
       })
       .map(issue => ({
         id: issue.id,
