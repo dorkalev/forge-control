@@ -291,9 +291,10 @@ LOCAL_AGENT_PORT=4665
 }
 
 async function getWorktrees() {
-  // Get worktree repo path from project context or env
+  // Get worktree repo path - prefer .forge file over cached context
+  const projectEnv = await getActiveProjectEnv();
   const ctx = getProjectContextSync();
-  const worktreeRepoPath = ctx?.WORKTREE_REPO_PATH || WORKTREE_REPO_PATH;
+  const worktreeRepoPath = projectEnv?.WORKTREE_REPO_PATH || ctx?.WORKTREE_REPO_PATH || WORKTREE_REPO_PATH;
 
   if (!worktreeRepoPath) {
     return [];
