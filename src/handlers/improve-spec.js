@@ -50,6 +50,10 @@ export async function handleApplySpec(req, res) {
     return respond(res, 400, { ok: false, error: 'issueId and newSpec required' });
   }
 
+  // Load project-specific API key
+  const projectEnv = await getActiveProjectEnv();
+  const apiKey = projectEnv?.LINEAR_APP || null;
+
   console.log(`📝 [Apply Spec] Updating Linear issue ${issueId}`);
 
   try {
@@ -62,11 +66,11 @@ export async function handleApplySpec(req, res) {
     // If title is empty or too long, fall back to just updating description
     if (!title || title.length > 200) {
       console.log(`📝 [Apply Spec] Title invalid, updating description only`);
-      result = await linear.updateIssueDescription(issueId, newSpec);
+      result = await linear.updateIssueDescription(issueId, newSpec, apiKey);
       console.log(`✅ [Apply Spec] Updated ${result.identifier} (description only)`);
     } else {
       console.log(`📝 [Apply Spec] New title: "${title}"`);
-      result = await linear.updateIssueTitleAndDescription(issueId, title, description);
+      result = await linear.updateIssueTitleAndDescription(issueId, title, description, apiKey);
       console.log(`✅ [Apply Spec] Updated ${result.identifier} with new title and description`);
     }
 
