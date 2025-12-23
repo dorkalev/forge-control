@@ -7,6 +7,43 @@ import { resolveWorktreeBaseDir } from '../services/worktree.js';
 import * as linear from '../services/linear.js';
 
 /**
+ * Extract image URLs from markdown text and attachments
+ */
+function extractImageUrls(description, attachments = []) {
+  const urls = new Set();
+
+  // Extract markdown image URLs: ![alt](url) or ![](url)
+  if (description) {
+    const markdownImageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    let match;
+    while ((match = markdownImageRegex.exec(description)) !== null) {
+      urls.add(match[2]);
+    }
+
+    // Also extract plain URLs that look like images
+    const plainImageUrlRegex = /https?:\/\/[^\s]+\.(?:png|jpg|jpeg|gif|webp|svg)/gi;
+    while ((match = plainImageUrlRegex.exec(description)) !== null) {
+      urls.add(match[0]);
+    }
+
+    // Linear upload URLs (they don't always have extensions)
+    const linearUploadRegex = /https:\/\/uploads\.linear\.app\/[^\s)]+/g;
+    while ((match = linearUploadRegex.exec(description)) !== null) {
+      urls.add(match[0]);
+    }
+  }
+
+  // Add attachment URLs
+  for (const att of attachments) {
+    if (att.url) {
+      urls.add(att.url);
+    }
+  }
+
+  return Array.from(urls);
+}
+
+/**
  * Run Claude Code in oneshot mode to improve a spec
  */
 export async function handleImproveSpec(req, res) {
@@ -27,19 +64,38 @@ export async function handleImproveSpec(req, res) {
   console.log(`🤖 [Improve Spec] Running Claude Code for ${issueIdentifier} in ${repoPath}`);
 
   try {
-    // Fetch sub-issues if any
+    // Fetch full issue with sub-issues and attachments
     let subIssues = [];
+    let imageUrls = [];
     try {
       const issueWithChildren = await linear.getIssueWithChildren(issueId);
       subIssues = issueWithChildren?.children?.nodes || [];
+
+      // Extract images from main issue
+      const mainAttachments = issueWithChildren?.attachments?.nodes || [];
+      imageUrls = extractImageUrls(issueWithChildren?.description || currentSpec, mainAttachments);
+
+      // Extract images from sub-issues
+      for (const sub of subIssues) {
+        const subAttachments = sub.attachments?.nodes || [];
+        const subImages = extractImageUrls(sub.description, subAttachments);
+        imageUrls.push(...subImages);
+      }
+
+      // Dedupe
+      imageUrls = [...new Set(imageUrls)];
+
       if (subIssues.length > 0) {
         console.log(`📋 [Improve Spec] Found ${subIssues.length} sub-issues`);
+      }
+      if (imageUrls.length > 0) {
+        console.log(`🖼️  [Improve Spec] Found ${imageUrls.length} image(s)/attachment(s)`);
       }
     } catch (err) {
       console.warn(`⚠️ [Improve Spec] Could not fetch sub-issues: ${err.message}`);
     }
 
-    const improvedSpec = await runClaudeForSpec(repoPath, title, currentSpec, subIssues);
+    const improvedSpec = await runClaudeForSpec(repoPath, title, currentSpec, subIssues, imageUrls);
     return respond(res, 200, { ok: true, improvedSpec });
   } catch (err) {
     console.error(`❌ [Improve Spec] Error:`, err.message);
@@ -174,7 +230,7 @@ ${localNotes || `<!-- Local notes below this line -->
 /**
  * Run Claude Code in oneshot mode
  */
-function runClaudeForSpec(repoPath, title, currentSpec, subIssues = []) {
+function runClaudeForSpec(repoPath, title, currentSpec, subIssues = [], imageUrls = []) {
   return new Promise((resolve, reject) => {
     // Format sub-issues if present
     let subIssuesSection = '';
@@ -189,19 +245,31 @@ Sub-issues/tasks:
 ${subIssuesList}`;
     }
 
+    // Format image URLs if present
+    let imagesSection = '';
+    if (imageUrls.length > 0) {
+      imagesSection = `
+
+Screenshots/Attachments (IMPORTANT - fetch these to understand the visual requirements):
+${imageUrls.map((url, i) => `  ${i + 1}. ${url}`).join('\n')}`;
+    }
+
     const prompt = `Read my codebase carefully to understand the project structure, patterns, and existing features.
 
 I have a backlog item titled: "${title}"
 
 Current spec/description:
-${currentSpec || '(No description provided)'}${subIssuesSection}
-
+${currentSpec || '(No description provided)'}${subIssuesSection}${imagesSection}
+${imageUrls.length > 0 ? `
+IMPORTANT: This issue has ${imageUrls.length} screenshot(s)/attachment(s) listed above. You MUST use WebFetch to view each image URL before writing the spec - they contain critical visual context about what the user wants.
+` : ''}
 Please improve this spec with clear product requirements. Focus on:
 - What the feature should do from a user perspective
 - Acceptance criteria
 - Edge cases to consider
 - Any dependencies on existing features
 ${subIssues.length > 0 ? '- Incorporate the sub-issues into the overall spec as implementation phases or acceptance criteria' : ''}
+${imageUrls.length > 0 ? '- Reference specific details from the screenshots in the acceptance criteria' : ''}
 
 IMPORTANT OUTPUT FORMAT RULES:
 - Output ONLY the raw spec text itself - nothing else

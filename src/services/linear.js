@@ -91,6 +91,13 @@ export async function getIssueWithChildren(issueId, apiKey = null) {
         }
         priority
         url
+        attachments {
+          nodes {
+            id
+            url
+            title
+          }
+        }
         children {
           nodes {
             id
@@ -101,6 +108,13 @@ export async function getIssueWithChildren(issueId, apiKey = null) {
             state {
               name
               type
+            }
+            attachments {
+              nodes {
+                id
+                url
+                title
+              }
             }
           }
         }
