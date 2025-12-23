@@ -25,13 +25,18 @@ export async function handleOpenClaude(req, res) {
       // Generate initial prompt from issue file if not provided
       let prompt = initialPrompt;
       if (!prompt) {
+        console.log(`🔍 [Claude] Looking for issue file in ${directoryPath}`);
         const issueInfo = await readIssueDescription(directoryPath);
         if (issueInfo?.issueFile) {
           prompt = `The current branch ticket is ${issueInfo.issueFile} - read it and make a plan for it.`;
+          console.log(`📝 [Claude] Generated prompt: "${prompt}"`);
+        } else {
+          console.log(`⚠️  [Claude] No issue file found in ${directoryPath}/issues/`);
         }
       }
 
       // Create or reuse session
+      console.log(`🚀 [Claude] Creating/reusing session with prompt: ${prompt ? 'YES' : 'NO'}`);
       const { sessionName, windowTitle } = await tmux.createClaudeSession(branch, directoryPath, title, ticketId, prompt);
 
       // Open in terminal

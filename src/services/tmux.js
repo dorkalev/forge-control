@@ -59,14 +59,7 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
 
   // Check if session exists
   if (await sessionExists(sessionName)) {
-    console.log(`♻️  Reusing tmux session: ${sessionName}`);
-    // Still send the prompt if provided (for existing sessions)
-    if (initialPrompt) {
-      const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
-      if (result.code === 0) {
-        console.log(`📝 Pre-filled prompt: "${initialPrompt.substring(0, 50)}..."`);
-      }
-    }
+    console.log(`♻️  Reusing existing tmux session: ${sessionName} (prompt not auto-filled for existing sessions)`);
     return { sessionName, windowTitle, created: false };
   }
 
@@ -89,9 +82,14 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
 
   // If initial prompt provided, wait for Claude to start then type it (without pressing Enter)
   if (initialPrompt) {
-    // Wait longer for Claude to fully initialize (it takes a few seconds to load)
-    console.log(`⏳ Waiting for Claude to initialize before sending prompt...`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Wait for Claude to fully initialize - needs time to load and show input prompt
+    console.log(`⏳ Waiting 10s for Claude to initialize before sending prompt...`);
+    await new Promise(resolve => setTimeout(resolve, 10000));
+
+    // Send Escape first to ensure clean input state, then the prompt
+    await runCommand('tmux', ['send-keys', '-t', sessionName, 'Escape']);
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Use send-keys with -l flag for literal text (handles special characters)
     const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
     if (result.code === 0) {
@@ -120,14 +118,7 @@ export async function createCodexSession(branch, directoryPath, title = null, ti
 
   // Check if session exists
   if (await sessionExists(sessionName)) {
-    console.log(`♻️  Reusing tmux session: ${sessionName}`);
-    // Still send the prompt if provided (for existing sessions)
-    if (initialPrompt) {
-      const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
-      if (result.code === 0) {
-        console.log(`📝 Pre-filled prompt: "${initialPrompt.substring(0, 50)}..."`);
-      }
-    }
+    console.log(`♻️  Reusing existing tmux session: ${sessionName} (prompt not auto-filled for existing sessions)`);
     return { sessionName, windowTitle, created: false };
   }
 
@@ -147,9 +138,14 @@ export async function createCodexSession(branch, directoryPath, title = null, ti
 
   // If initial prompt provided, wait for Codex to start then type it (without pressing Enter)
   if (initialPrompt) {
-    // Wait longer for Codex to fully initialize (it takes a few seconds to load)
-    console.log(`⏳ Waiting for Codex to initialize before sending prompt...`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    // Wait for Codex to fully initialize - needs time to load and show input prompt
+    console.log(`⏳ Waiting 10s for Codex to initialize before sending prompt...`);
+    await new Promise(resolve => setTimeout(resolve, 10000));
+
+    // Send Escape first to ensure clean input state, then the prompt
+    await runCommand('tmux', ['send-keys', '-t', sessionName, 'Escape']);
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Use send-keys with -l flag for literal text (handles special characters)
     const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
     if (result.code === 0) {
