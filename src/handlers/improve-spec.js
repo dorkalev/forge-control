@@ -236,12 +236,13 @@ function runClaudeForSpec(repoPath, title, currentSpec, subIssues = [], imageUrl
     let subIssuesSection = '';
     if (subIssues.length > 0) {
       const subIssuesList = subIssues.map(sub => {
-        const desc = sub.description ? `\n     ${sub.description.substring(0, 200)}${sub.description.length > 200 ? '...' : ''}` : '';
+        // Use full description - images are often the entire content
+        const desc = sub.description ? `\n     Description: ${sub.description}` : '';
         return `  - ${sub.identifier}: ${sub.title}${desc}`;
-      }).join('\n');
+      }).join('\n\n');
       subIssuesSection = `
 
-Sub-issues/tasks:
+Sub-issues/tasks (each may contain screenshots - you MUST fetch and view them):
 ${subIssuesList}`;
     }
 
@@ -261,7 +262,9 @@ I have a backlog item titled: "${title}"
 Current spec/description:
 ${currentSpec || '(No description provided)'}${subIssuesSection}${imagesSection}
 ${imageUrls.length > 0 ? `
-IMPORTANT: This issue has ${imageUrls.length} screenshot(s)/attachment(s) listed above. You MUST use WebFetch to view each image URL before writing the spec - they contain critical visual context about what the user wants.
+CRITICAL: This issue has ${imageUrls.length} screenshot(s)/attachment(s). These images ARE the requirements - the text alone is NOT sufficient.
+You MUST use WebFetch to view EVERY image URL (including ![image.png](url) in descriptions) BEFORE writing ANY spec content.
+Do NOT invent or assume what the images show - if you cannot view them, say so.
 ` : ''}
 Please improve this spec with clear product requirements. Focus on:
 - What the feature should do from a user perspective
@@ -282,7 +285,11 @@ IMPORTANT OUTPUT FORMAT RULES:
 
 Your entire response should be the spec and nothing but the spec.`;
 
-    const claude = spawn('claude', ['--print'], {
+    // Use --tools to enable WebFetch so Claude can view images
+    const args = ['--print', '--tools', 'Read,Glob,Grep,WebFetch'];
+    console.log(`🔧 [Improve Spec] Running: claude ${args.join(' ')}`);
+
+    const claude = spawn('claude', args, {
       cwd: repoPath,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
