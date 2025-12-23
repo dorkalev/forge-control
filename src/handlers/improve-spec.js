@@ -367,16 +367,15 @@ Please improve this spec with clear product requirements. Focus on:
 ${subIssues.length > 0 ? '- Incorporate the sub-issues into the overall spec as implementation phases or acceptance criteria' : ''}
 ${localImagePaths.length > 0 ? '- Reference specific details from the screenshots in the acceptance criteria' : ''}
 
-IMPORTANT OUTPUT FORMAT RULES:
-- Output ONLY the raw spec text itself - nothing else
-- Do NOT include any preamble like "Here is the improved spec:" or "I understand..."
-- Do NOT include any closing remarks like "Let me know if you need changes"
-- Do NOT wrap the output in markdown code blocks
-- Start directly with the spec title on line 1
+OUTPUT FORMAT:
+- First, do any research/image viewing you need
+- When ready to output the spec, write "---SPEC START---" on its own line
+- Then write the spec (title on first line, then content)
 - Only include product decisions, no technical implementation details
 - Keep it concise: ${subIssues.length > 0 ? `${300 * subIssues.length}-${400 * subIssues.length}` : '300-400'} words maximum
+- End with "---SPEC END---" on its own line
 
-Your entire response should be the spec and nothing but the spec.`;
+Everything between ---SPEC START--- and ---SPEC END--- will be extracted as the final spec.`;
 
     // Use --tools to enable WebFetch so Claude can view images
     const args = ['--print', '--tools', 'Read,Glob,Grep,WebFetch'];
@@ -404,7 +403,22 @@ Your entire response should be the spec and nothing but the spec.`;
     claude.on('close', (code) => {
       if (code === 0) {
         console.log(`✅ [Improve Spec] Claude Code completed successfully`);
-        resolve(output.trim());
+
+        // Extract content between markers
+        const startMarker = '---SPEC START---';
+        const endMarker = '---SPEC END---';
+        const startIdx = output.indexOf(startMarker);
+        const endIdx = output.indexOf(endMarker);
+
+        if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+          const spec = output.substring(startIdx + startMarker.length, endIdx).trim();
+          console.log(`📄 [Improve Spec] Extracted spec (${spec.length} chars)`);
+          resolve(spec);
+        } else {
+          // Fallback: use full output if markers not found
+          console.warn(`⚠️  [Improve Spec] Markers not found, using full output`);
+          resolve(output.trim());
+        }
       } else {
         console.error(`❌ [Improve Spec] Claude Code exited with code ${code}`);
         console.error(`Error output: ${errorOutput}`);
