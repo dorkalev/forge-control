@@ -35,6 +35,31 @@ export async function killSession(sessionName) {
   return runCommand('tmux', ['kill-session', '-t', sessionName]);
 }
 
+/**
+ * Wait for Claude/Codex CLI to be ready for input by polling tmux pane content
+ * Looks for the ">" prompt indicator or "Try " hint
+ */
+async function waitForCliReady(sessionName, maxWaitMs = 30000) {
+  const pollIntervalMs = 500;
+  const maxAttempts = Math.ceil(maxWaitMs / pollIntervalMs);
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const result = await runCommand('tmux', ['capture-pane', '-t', sessionName, '-p']);
+    if (result.code === 0) {
+      const content = result.stdout;
+      // Look for Claude's prompt indicators
+      if (content.includes('> ') || content.includes('Try "')) {
+        console.log(`✅ CLI ready after ${(i + 1) * pollIntervalMs}ms`);
+        return true;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+  }
+
+  console.warn(`⚠️  CLI not ready after ${maxWaitMs}ms, sending prompt anyway`);
+  return false;
+}
+
 async function upgradeClaudeCode() {
   console.log('🔄 Checking for claude-code updates...');
   const result = await runCommand('brew', ['upgrade', 'claude-code', '--quiet']);
@@ -80,15 +105,10 @@ export async function createClaudeSession(branch, directoryPath, title = null, t
   // Start Claude with maximum permissions (skip permission prompts)
   await sendKeys(sessionName, ['claude --dangerously-skip-permissions', 'C-m']);
 
-  // If initial prompt provided, wait for Claude to start then type it (without pressing Enter)
+  // If initial prompt provided, wait for Claude to be ready then type it
   if (initialPrompt) {
-    // Wait for Claude to fully initialize - needs time to load and show input prompt
-    console.log(`⏳ Waiting 10s for Claude to initialize before sending prompt...`);
-    await new Promise(resolve => setTimeout(resolve, 10000));
-
-    // Send Escape first to ensure clean input state, then the prompt
-    await runCommand('tmux', ['send-keys', '-t', sessionName, 'Escape']);
-    await new Promise(resolve => setTimeout(resolve, 100));
+    console.log(`⏳ Waiting for Claude CLI to be ready...`);
+    await waitForCliReady(sessionName);
 
     // Use send-keys with -l flag for literal text (handles special characters)
     const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
@@ -136,15 +156,10 @@ export async function createCodexSession(branch, directoryPath, title = null, ti
   // Start Codex with full auto mode
   await sendKeys(sessionName, ['codex --full-auto', 'C-m']);
 
-  // If initial prompt provided, wait for Codex to start then type it (without pressing Enter)
+  // If initial prompt provided, wait for Codex to be ready then type it
   if (initialPrompt) {
-    // Wait for Codex to fully initialize - needs time to load and show input prompt
-    console.log(`⏳ Waiting 10s for Codex to initialize before sending prompt...`);
-    await new Promise(resolve => setTimeout(resolve, 10000));
-
-    // Send Escape first to ensure clean input state, then the prompt
-    await runCommand('tmux', ['send-keys', '-t', sessionName, 'Escape']);
-    await new Promise(resolve => setTimeout(resolve, 100));
+    console.log(`⏳ Waiting for Codex CLI to be ready...`);
+    await waitForCliReady(sessionName);
 
     // Use send-keys with -l flag for literal text (handles special characters)
     const result = await runCommand('tmux', ['send-keys', '-t', sessionName, '-l', initialPrompt]);
