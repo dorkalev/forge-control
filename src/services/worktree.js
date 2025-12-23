@@ -4,6 +4,18 @@ import { runCommand } from '../utils/command.js';
 import { REPO_PATH, WORKTREE_BASE_PATH, WORKTREE_REPO_PATH } from '../config/env.js';
 import { getProjectContextSync, getActiveProjectEnv } from './projects.js';
 
+/**
+ * Extract ticket ID from a string (folder name, branch name, etc.)
+ * e.g., "bol-136-grand-ux-for-vlad" → "BOL-136"
+ * e.g., "BOL-136" → "BOL-136"
+ * @returns {string|null} Uppercase ticket ID or null if not found
+ */
+export function extractTicketId(str) {
+  if (!str) return null;
+  const match = str.match(/([A-Za-z]+-\d+)/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
 // Cache for forge config (async-loaded, used by sync functions)
 let cachedForgeConfig = null;
 
@@ -58,10 +70,9 @@ export async function readIssueDescription(worktreePath) {
     const mdFiles = files.filter(f => f.endsWith('.md'));
     if (mdFiles.length === 0) return null;
 
-    // Extract ticket ID from worktree path (e.g., "bol-31" from "bol-31-communicate-new-features...")
+    // Extract ticket ID from worktree path (e.g., "BOL-31" from "bol-31-communicate-new-features...")
     const folderName = path.basename(worktreePath);
-    const ticketIdMatch = folderName.match(/^([A-Za-z]+-\d+)/i);
-    const ticketId = ticketIdMatch ? ticketIdMatch[1].toUpperCase() : null;
+    const ticketId = extractTicketId(folderName);
 
     // Try to find the matching issue file, fall back to first .md file
     let mdFile;

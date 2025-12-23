@@ -5,7 +5,7 @@ import os from 'os';
 import fetch from 'node-fetch';
 import { respond, parseBody } from '../utils/http.js';
 import { getProjectContextSync, getActiveProjectEnv } from '../services/projects.js';
-import { resolveWorktreeBaseDir } from '../services/worktree.js';
+import { resolveWorktreeBaseDir, extractTicketId } from '../services/worktree.js';
 import * as linear from '../services/linear.js';
 import { LINEAR_API_KEY } from '../config/env.js';
 
@@ -259,12 +259,13 @@ async function updateLocalIssueFile(identifier, title, description) {
       return;
     }
 
-    // Find worktrees that match this identifier
+    // Find worktrees that match this identifier (by ticket ID prefix)
     const entries = await fs.readdir(worktreeBase, { withFileTypes: true });
     const matchingWorktree = entries.find(entry => {
       if (!entry.isDirectory()) return false;
-      // Check if folder name contains the identifier (case-insensitive)
-      return entry.name.toLowerCase().includes(identifier.toLowerCase());
+      // Extract ticket ID from folder name (e.g., "BOL-136" from "bol-136-some-title")
+      const folderTicketId = extractTicketId(entry.name);
+      return folderTicketId === identifier.toUpperCase();
     });
 
     if (!matchingWorktree) {
