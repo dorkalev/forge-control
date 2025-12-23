@@ -91,6 +91,7 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         <button onclick="openClaude('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-claude" title="Open Claude">🤖 Claude</button>
         <button onclick="openCodex('${wt.path}', '${wt.branch}', '${wt.title.replace(/'/g, "\\'")}', '${ticketId}')" class="action-btn btn-codex" title="Open Codex">🧠 Codex</button>
         <button onclick="openInFinder('${wt.path}')" class="action-btn btn-finder" title="Open in Finder">📁 Finder</button>
+        <button onclick="openInMarta('${wt.path}')" class="action-btn btn-marta" title="Open in Marta">📂 Marta</button>
         <button onclick="openMeld('${wt.path}')" class="action-btn btn-meld" title="Open in Meld">📊 Meld</button>
         <button onclick="cleanupBranch('${wt.path}', '${wt.branch}', '${ticketId}')" class="action-btn btn-cleanup" style="display: none;" title="Delete branch and worktree">🗑 Cleanup!</button>
         <button onclick="hideWorktree('${wt.path}', '${wt.branch}')" class="action-btn btn-hide" title="Hide worktree">👁 Hide</button>
@@ -652,6 +653,11 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
       background: linear-gradient(135deg, #f59e0b, #fbbf24);
       color: #0f0a02;
       border: 1px solid rgba(245,158,11,0.4);
+    }
+    .btn-marta {
+      background: linear-gradient(135deg, #06b6d4, #22d3ee);
+      color: #042f2e;
+      border: 1px solid rgba(6,182,212,0.4);
     }
     .btn-meld {
       background: linear-gradient(135deg, #8b5cf6, #a78bfa);
@@ -1402,6 +1408,18 @@ export function renderRootPage(worktrees, openPRs, linearIssues, tmuxSessions, l
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({path})
       });
+    }
+
+    async function openInMarta(path) {
+      const res = await fetch('/open-marta', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path})
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('To use Marta file manager, install it:\\n\\nbrew install marta\\n\\nOr download from https://marta.sh');
+      }
     }
 
     async function openMeld(path) {

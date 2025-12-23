@@ -70,6 +70,53 @@ export async function getIssue(issueId, apiKey = null) {
   return data.data?.issue;
 }
 
+export async function getIssueWithChildren(issueId, apiKey = null) {
+  const query = `
+    query($id: String!) {
+      issue(id: $id) {
+        id
+        identifier
+        title
+        description
+        state {
+          name
+          type
+        }
+        assignee {
+          name
+        }
+        project {
+          id
+          name
+        }
+        priority
+        url
+        children {
+          nodes {
+            id
+            identifier
+            title
+            description
+            priority
+            state {
+              name
+              type
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const data = await executeQuery(query, { id: issueId }, apiKey);
+
+  if (data.errors) {
+    throw new Error(data.errors[0]?.message || 'Linear API error');
+  }
+
+  return data.data?.issue;
+}
+
 export async function getIssueByBranchName(branchName) {
   const query = `
     query($branchName: String!) {

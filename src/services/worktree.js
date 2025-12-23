@@ -217,6 +217,7 @@ export async function createWorktree(branch) {
   // Copy .env file and .claude directory to the new worktree if successful
   if (ok) {
     await copyWorktreeFiles(worktreePath, worktreeRepoPath, results);
+    await installForgeComplianceAgent(worktreePath, results);
     await initSubmodules(worktreePath, results);
   }
 
@@ -279,6 +280,47 @@ async function copyWorktreeFiles(worktreePath, worktreeRepoPath, results) {
       console.error(`⚠️  Failed to symlink .forge: ${err.message}`);
       results.push({ step: 'symlink-forge', code: 1, error: err.message });
     }
+  }
+}
+
+/**
+ * Install forge-compliance agent if not already present
+ * Sources the agent from a template location (FORGE_AGENT_TEMPLATE_PATH or ~/src/luigix)
+ */
+async function installForgeComplianceAgent(worktreePath, results) {
+  const agentFileName = 'forge-compliance.md';
+  const targetAgentsDir = path.join(worktreePath, '.claude', 'agents');
+  const targetAgentPath = path.join(targetAgentsDir, agentFileName);
+
+  // Skip if already exists
+  if (exists(targetAgentPath)) {
+    console.log(`ℹ️  forge-compliance agent already exists at ${targetAgentPath}`);
+    results.push({ step: 'install-forge-compliance', code: 0, message: 'Agent already exists' });
+    return;
+  }
+
+  // Find template source - check env var or use default luigix location
+  const templateBase = process.env.FORGE_AGENT_TEMPLATE_PATH ||
+    path.join(process.env.HOME, 'src', 'luigix');
+  const sourceAgentPath = path.join(templateBase, '.claude', 'agents', agentFileName);
+
+  if (!exists(sourceAgentPath)) {
+    console.log(`ℹ️  No forge-compliance template found at ${sourceAgentPath}`);
+    results.push({ step: 'install-forge-compliance', code: 0, message: 'No template found' });
+    return;
+  }
+
+  try {
+    // Ensure .claude/agents directory exists
+    fs.mkdirSync(targetAgentsDir, { recursive: true });
+
+    // Copy the agent file
+    fs.copyFileSync(sourceAgentPath, targetAgentPath);
+    console.log(`✅ Installed forge-compliance agent to ${targetAgentPath}`);
+    results.push({ step: 'install-forge-compliance', code: 0, message: 'Installed forge-compliance agent' });
+  } catch (err) {
+    console.error(`⚠️  Failed to install forge-compliance agent: ${err.message}`);
+    results.push({ step: 'install-forge-compliance', code: 1, error: err.message });
   }
 }
 

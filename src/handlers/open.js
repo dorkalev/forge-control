@@ -100,6 +100,45 @@ export async function handleOpenMeld(req, res) {
   });
 }
 
+export async function handleOpenMarta(req, res) {
+  if (req.method !== 'POST') {
+    return respond(res, 405, { ok: false, error: 'Method not allowed' });
+  }
+
+  let body = '';
+  req.on('data', chunk => { body += chunk.toString(); });
+  req.on('end', async () => {
+    try {
+      const { path: directoryPath } = JSON.parse(body);
+      if (!directoryPath) {
+        return respond(res, 400, { ok: false, error: 'path required' });
+      }
+
+      if (!exists(directoryPath)) {
+        return respond(res, 400, { ok: false, error: 'directory does not exist' });
+      }
+
+      const r = await runCommand('open', ['-a', 'Marta', directoryPath]);
+
+      if (r.code === 0) {
+        return respond(res, 200, { ok: true, ...r });
+      } else {
+        return respond(res, 500, { ok: false, error: 'Failed to open Marta. Is it installed? Get it from https://marta.sh or run: brew install marta' });
+      }
+    } catch (e) {
+      return respond(res, 500, { ok: false, error: e.message });
+    }
+  });
+}
+
+/**
+ * Check if Marta is installed
+ */
+export async function checkMartaInstalled() {
+  const r = await runCommand('test', ['-d', '/Applications/Marta.app']);
+  return r.code === 0;
+}
+
 /**
  * Check if Meld is installed
  */

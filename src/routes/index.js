@@ -1,5 +1,5 @@
 import { handleCheckout } from '../handlers/checkout.js';
-import { handleOpen, handleOpenTerminal, handleOpenFinder, handleOpenMeld, handleOpenIssueFile } from '../handlers/open.js';
+import { handleOpen, handleOpenTerminal, handleOpenFinder, handleOpenMeld, handleOpenMarta, handleOpenIssueFile } from '../handlers/open.js';
 import { handleOpenClaude, handleOpenCodex, handleAttachTmux, handleKillTmux, handleTileIterm, handleTileAllWindows } from '../handlers/tmux.js';
 import { handleCleanupBranch, handleHideWorktree } from '../handlers/cleanup.js';
 import { handleRunDev } from '../handlers/dev.js';
@@ -118,6 +118,10 @@ export async function routeRequest(req, res, pathname, query) {
 
     if (pathname === '/open-meld') {
       return await handleOpenMeld(req, res);
+    }
+
+    if (pathname === '/open-marta') {
+      return await handleOpenMarta(req, res);
     }
 
     if (pathname === '/open-issue-file') {

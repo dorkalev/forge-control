@@ -27,7 +27,19 @@ export async function handleImproveSpec(req, res) {
   console.log(`🤖 [Improve Spec] Running Claude Code for ${issueIdentifier} in ${repoPath}`);
 
   try {
-    const improvedSpec = await runClaudeForSpec(repoPath, title, currentSpec);
+    // Fetch sub-issues if any
+    let subIssues = [];
+    try {
+      const issueWithChildren = await linear.getIssueWithChildren(issueId);
+      subIssues = issueWithChildren?.children?.nodes || [];
+      if (subIssues.length > 0) {
+        console.log(`📋 [Improve Spec] Found ${subIssues.length} sub-issues`);
+      }
+    } catch (err) {
+      console.warn(`⚠️ [Improve Spec] Could not fetch sub-issues: ${err.message}`);
+    }
+
+    const improvedSpec = await runClaudeForSpec(repoPath, title, currentSpec, subIssues);
     return respond(res, 200, { ok: true, improvedSpec });
   } catch (err) {
     console.error(`❌ [Improve Spec] Error:`, err.message);
@@ -162,20 +174,34 @@ ${localNotes || `<!-- Local notes below this line -->
 /**
  * Run Claude Code in oneshot mode
  */
-function runClaudeForSpec(repoPath, title, currentSpec) {
+function runClaudeForSpec(repoPath, title, currentSpec, subIssues = []) {
   return new Promise((resolve, reject) => {
+    // Format sub-issues if present
+    let subIssuesSection = '';
+    if (subIssues.length > 0) {
+      const subIssuesList = subIssues.map(sub => {
+        const desc = sub.description ? `\n     ${sub.description.substring(0, 200)}${sub.description.length > 200 ? '...' : ''}` : '';
+        return `  - ${sub.identifier}: ${sub.title}${desc}`;
+      }).join('\n');
+      subIssuesSection = `
+
+Sub-issues/tasks:
+${subIssuesList}`;
+    }
+
     const prompt = `Read my codebase carefully to understand the project structure, patterns, and existing features.
 
 I have a backlog item titled: "${title}"
 
 Current spec/description:
-${currentSpec || '(No description provided)'}
+${currentSpec || '(No description provided)'}${subIssuesSection}
 
 Please improve this spec with clear product requirements. Focus on:
 - What the feature should do from a user perspective
 - Acceptance criteria
 - Edge cases to consider
 - Any dependencies on existing features
+${subIssues.length > 0 ? '- Incorporate the sub-issues into the overall spec as implementation phases or acceptance criteria' : ''}
 
 IMPORTANT OUTPUT FORMAT RULES:
 - Output ONLY the raw spec text itself - nothing else
@@ -184,7 +210,7 @@ IMPORTANT OUTPUT FORMAT RULES:
 - Do NOT wrap the output in markdown code blocks
 - Start directly with the spec title on line 1
 - Only include product decisions, no technical implementation details
-- Keep it concise: 300-400 words maximum
+- Keep it concise: ${subIssues.length > 0 ? `${300 * subIssues.length}-${400 * subIssues.length}` : '300-400'} words maximum
 
 Your entire response should be the spec and nothing but the spec.`;
 
