@@ -82,9 +82,15 @@ export async function readIssueDescription(worktreePath) {
     const titleLine = lines.find(line => line.startsWith('# '));
     const title = titleLine ? titleLine.replace('# ', '').trim() : null;
 
-    // Extract description section
+    // Always include issueFile
+    const issueFile = `issues/${mdFile}`;
+
+    // Extract description section (optional)
     const descIndex = lines.findIndex(line => line.trim() === '## Description');
-    if (descIndex === -1) return { title };
+    if (descIndex === -1) {
+      console.log(`📖 Extracted: title="${title?.substring(0, 50)}...", file="${issueFile}" (no ## Description section)`);
+      return { title, issueFile };
+    }
 
     let description = '';
     for (let i = descIndex + 1; i < lines.length; i++) {
@@ -93,7 +99,7 @@ export async function readIssueDescription(worktreePath) {
       if (line) description += line + ' ';
     }
 
-    const result = { title, description: description.trim(), issueFile: `issues/${mdFile}` };
+    const result = { title, description: description.trim(), issueFile };
     console.log(`📖 Extracted: title="${title?.substring(0, 50)}...", desc="${result.description.substring(0, 50)}...", file="${result.issueFile}"`);
     return result;
   } catch (e) {
