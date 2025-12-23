@@ -1,10 +1,87 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs/promises';
+import os from 'os';
+import fetch from 'node-fetch';
 import { respond, parseBody } from '../utils/http.js';
 import { getProjectContextSync, getActiveProjectEnv } from '../services/projects.js';
 import { resolveWorktreeBaseDir } from '../services/worktree.js';
 import * as linear from '../services/linear.js';
+import { LINEAR_API_KEY } from '../config/env.js';
+
+/**
+ * Download Linear images to temp directory with authentication
+ * Returns array of local file paths
+ */
+async function downloadLinearImages(imageUrls, apiKey = null) {
+  const key = apiKey || LINEAR_API_KEY;
+  if (!key || imageUrls.length === 0) {
+    return [];
+  }
+
+  const tempDir = path.join(os.tmpdir(), `forge-spec-images-${Date.now()}`);
+  await fs.mkdir(tempDir, { recursive: true });
+
+  const localPaths = [];
+
+  for (let i = 0; i < imageUrls.length; i++) {
+    const url = imageUrls[i];
+    try {
+      console.log(`📥 [Improve Spec] Downloading image ${i + 1}/${imageUrls.length}: ${url.substring(0, 80)}...`);
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': key
+        }
+      });
+
+      if (!response.ok) {
+        console.warn(`⚠️  [Improve Spec] Failed to download image: ${response.status}`);
+        continue;
+      }
+
+      // Determine extension from content-type
+      const contentType = response.headers.get('content-type') || 'image/png';
+      const ext = contentType.includes('jpeg') || contentType.includes('jpg') ? '.jpg'
+        : contentType.includes('gif') ? '.gif'
+        : contentType.includes('webp') ? '.webp'
+        : '.png';
+
+      const filePath = path.join(tempDir, `image-${i + 1}${ext}`);
+      const buffer = await response.buffer();
+      await fs.writeFile(filePath, buffer);
+
+      localPaths.push(filePath);
+      console.log(`✅ [Improve Spec] Saved image to ${filePath}`);
+    } catch (err) {
+      console.warn(`⚠️  [Improve Spec] Error downloading image: ${err.message}`);
+    }
+  }
+
+  return localPaths;
+}
+
+/**
+ * Cleanup temp image files
+ */
+async function cleanupTempImages(localPaths) {
+  for (const filePath of localPaths) {
+    try {
+      await fs.unlink(filePath);
+    } catch (err) {
+      // Ignore cleanup errors
+    }
+  }
+  // Try to remove the temp directory
+  if (localPaths.length > 0) {
+    try {
+      const tempDir = path.dirname(localPaths[0]);
+      await fs.rmdir(tempDir);
+    } catch (err) {
+      // Ignore if not empty or other errors
+    }
+  }
+}
 
 /**
  * Extract image URLs from markdown text and attachments
@@ -95,8 +172,24 @@ export async function handleImproveSpec(req, res) {
       console.warn(`⚠️ [Improve Spec] Could not fetch sub-issues: ${err.message}`);
     }
 
-    const improvedSpec = await runClaudeForSpec(repoPath, title, currentSpec, subIssues, imageUrls);
-    return respond(res, 200, { ok: true, improvedSpec });
+    // Download images locally so Claude can view them (Linear URLs require auth)
+    let localImagePaths = [];
+    if (imageUrls.length > 0) {
+      const projectEnv = await getActiveProjectEnv();
+      const apiKey = projectEnv?.LINEAR_APP || null;
+      localImagePaths = await downloadLinearImages(imageUrls, apiKey);
+      console.log(`📁 [Improve Spec] Downloaded ${localImagePaths.length}/${imageUrls.length} images locally`);
+    }
+
+    try {
+      const improvedSpec = await runClaudeForSpec(repoPath, title, currentSpec, subIssues, localImagePaths);
+      return respond(res, 200, { ok: true, improvedSpec });
+    } finally {
+      // Cleanup temp images
+      if (localImagePaths.length > 0) {
+        await cleanupTempImages(localImagePaths);
+      }
+    }
   } catch (err) {
     console.error(`❌ [Improve Spec] Error:`, err.message);
     return respond(res, 500, { ok: false, error: err.message });
@@ -230,7 +323,7 @@ ${localNotes || `<!-- Local notes below this line -->
 /**
  * Run Claude Code in oneshot mode
  */
-function runClaudeForSpec(repoPath, title, currentSpec, subIssues = [], imageUrls = []) {
+function runClaudeForSpec(repoPath, title, currentSpec, subIssues = [], localImagePaths = []) {
   return new Promise((resolve, reject) => {
     // Format sub-issues if present
     let subIssuesSection = '';
@@ -242,17 +335,17 @@ function runClaudeForSpec(repoPath, title, currentSpec, subIssues = [], imageUrl
       }).join('\n\n');
       subIssuesSection = `
 
-Sub-issues/tasks (each may contain screenshots - you MUST fetch and view them):
+Sub-issues/tasks:
 ${subIssuesList}`;
     }
 
-    // Format image URLs if present
+    // Format local image paths if present
     let imagesSection = '';
-    if (imageUrls.length > 0) {
+    if (localImagePaths.length > 0) {
       imagesSection = `
 
-Screenshots/Attachments (IMPORTANT - fetch these to understand the visual requirements):
-${imageUrls.map((url, i) => `  ${i + 1}. ${url}`).join('\n')}`;
+Screenshots/Attachments (LOCAL FILES - use Read tool to view each one):
+${localImagePaths.map((p, i) => `  ${i + 1}. ${p}`).join('\n')}`;
     }
 
     const prompt = `Read my codebase carefully to understand the project structure, patterns, and existing features.
@@ -261,10 +354,10 @@ I have a backlog item titled: "${title}"
 
 Current spec/description:
 ${currentSpec || '(No description provided)'}${subIssuesSection}${imagesSection}
-${imageUrls.length > 0 ? `
-CRITICAL: This issue has ${imageUrls.length} screenshot(s)/attachment(s). These images ARE the requirements - the text alone is NOT sufficient.
-You MUST use WebFetch to view EVERY image URL (including ![image.png](url) in descriptions) BEFORE writing ANY spec content.
-Do NOT invent or assume what the images show - if you cannot view them, say so.
+${localImagePaths.length > 0 ? `
+CRITICAL: This issue has ${localImagePaths.length} screenshot(s)/attachment(s) saved as local files. These images ARE the requirements - the text alone is NOT sufficient.
+You MUST use the Read tool to view EVERY image file listed above BEFORE writing ANY spec content.
+The images show the actual UI/feature being requested. Do NOT invent or assume what they show - describe what you actually see.
 ` : ''}
 Please improve this spec with clear product requirements. Focus on:
 - What the feature should do from a user perspective
@@ -272,7 +365,7 @@ Please improve this spec with clear product requirements. Focus on:
 - Edge cases to consider
 - Any dependencies on existing features
 ${subIssues.length > 0 ? '- Incorporate the sub-issues into the overall spec as implementation phases or acceptance criteria' : ''}
-${imageUrls.length > 0 ? '- Reference specific details from the screenshots in the acceptance criteria' : ''}
+${localImagePaths.length > 0 ? '- Reference specific details from the screenshots in the acceptance criteria' : ''}
 
 IMPORTANT OUTPUT FORMAT RULES:
 - Output ONLY the raw spec text itself - nothing else
