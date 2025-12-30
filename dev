@@ -1,4 +1,6 @@
 #!/bin/bash
 # Unset FORGE_ROOT to ensure worktree uses its own code
 unset FORGE_ROOT
-npm run app
+
+# Use 'open -a' to launch Electron as a proper macOS app (shows in Dock/Cmd+Tab)
+open -a "$(pwd)/node_modules/electron/dist/Electron.app" --args "$(pwd)/electron/main.cjs"
