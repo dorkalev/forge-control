@@ -138,6 +138,7 @@ function startServer() {
         if (response.ok) {
           console.log("✅ Server is ready");
           clearInterval(checkServer);
+          clearTimeout(timeoutId);
           resolve();
         }
       } catch (e) {
@@ -146,7 +147,7 @@ function startServer() {
     }, 500);
 
     // Timeout after 30 seconds
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       clearInterval(checkServer);
       console.error("❌ Server startup timeout after 30 seconds");
       reject(new Error("Server startup timeout - check Console.app for logs"));
@@ -196,6 +197,10 @@ async function createWindow() {
 
     // Point to Forge server
     await win.loadURL(`http://localhost:${forgePort}`);
+
+    // Ensure window is visible and focused
+    win.show();
+    win.focus();
 
     // Open external links in default browser
     win.webContents.setWindowOpenHandler(({ url }) => {
